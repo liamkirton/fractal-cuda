@@ -1,17 +1,19 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
-#include <memory.h>
+#include <memory>
+#include <vector>
 
 #include "fractal.h"
 
-__global__ void mandelbrot_kernel(const unsigned int image_width, const unsigned int image_height, unsigned int *point_buffer) {
+__global__ void mandelbrot_kernel(const uint64_t image_width, const uint64_t image_height, const uint64_t image_chunk, uint32_t *image_chunk_buffer) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
-    const int pixel_x = tid % image_width;
-    const int pixel_y = tid / image_width;
+    const int pixel_x = (image_chunk + tid) % image_width;
+    const int pixel_y = (image_chunk + tid) / image_width;
 
     const double image_center_re = -0.66;
     const double image_center_im = 0.15;
@@ -20,7 +22,7 @@ __global__ void mandelbrot_kernel(const unsigned int image_width, const unsigned
     const double re_c = image_center_re + (-2.0 + pixel_x * 3.0 / image_width) / image_scale;
     const double im_c = image_center_im + (1.0 - pixel_y * 2.0 / image_height) / image_scale;
 
-    const unsigned int escape_limit = 2048;
+    const unsigned int escape_limit = 1024;
 
     double re_z = re_c;
     double im_z = im_c;
@@ -87,24 +89,52 @@ __global__ void mandelbrot_kernel(const unsigned int image_width, const unsigned
         r = floor(r * 255); g = floor(g * 255); b = floor(b * 255);
     }
 
-    point_buffer[tid] = ((unsigned char)(r) << 0) |
+    image_chunk_buffer[tid] = ((unsigned char)(r) << 0) |
         ((unsigned char)(g) << 8) |
         ((unsigned char)(b) << 16) |
         (255 << 24);
 }
 
-void mandelbrot(unsigned int image_width, unsigned int image_height, unsigned int *result_buffer) {
-    size_t point_buffer_size = sizeof(unsigned int) * image_width * image_height;
-    unsigned int *point_buffer{ nullptr };
-    cudaMalloc(&point_buffer, point_buffer_size);
-
-    mandelbrot_kernel<<<image_width * image_height / 1024, 1024>>>(image_width, image_height, point_buffer);
-
-    cudaError_t cudaError = cudaDeviceSynchronize();
-    if (cudaError != cudaSuccess) {
-        std::wcout << L"cudaError: " << cudaError << std::endl;
-        return;
+int mandelbrot(const uint64_t image_width, const uint64_t image_height, uint32_t *image) {
+    cudaError_t cuda_status;
+    if ((cuda_status = cudaSetDevice(0)) != cudaSuccess) {
+        std::wcout << L"ERROR: cudaSetDevice() Failed. [" << cuda_status << L"]" << std::endl << std::endl;
+        return -1;
     }
 
-    cudaMemcpy(result_buffer, point_buffer, point_buffer_size, cudaMemcpyDeviceToHost);
+    uint64_t groups = 2048;
+    uint64_t threads = 1024;
+
+    uint32_t *image_chunk_buffer{ nullptr };
+    cudaMalloc(&image_chunk_buffer, groups * threads * sizeof(uint32_t));
+
+    std::wcout << L"[+] Chunks: " << image_width * image_height / (groups * threads) << L" " << std::flush;
+
+    for (uint64_t image_chunk = 0; image_chunk < (image_width * image_height); image_chunk += (groups * threads)) {
+        uint64_t chunk_size = std::min((image_width * image_height) - image_chunk, groups * threads);
+        uint64_t chunk_groups = chunk_size / threads;
+
+        mandelbrot_kernel<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(threads)>>>(image_width, image_height, image_chunk, image_chunk_buffer);
+
+        cudaError_t cudaError = cudaDeviceSynchronize();
+        if (cudaError != cudaSuccess) {
+            std::wcout << std::endl << "cudaError: " << cudaError << std::endl;
+            return -1;
+        }
+
+        cudaMemcpy(&image[image_chunk], image_chunk_buffer, chunk_groups * threads * sizeof(uint32_t), cudaMemcpyDeviceToHost);
+        std::wcout << L"." << std::flush;
+    }
+
+    std::wcout << std::endl;
+
+    cudaFree(image_chunk_buffer);
+    image_chunk_buffer = nullptr;
+
+    if ((cuda_status = cudaDeviceReset()) != cudaSuccess) {
+        std::wcout << L"ERROR: cudaDeviceReset() Failed. [" << cuda_status << L"]" << std::endl << std::endl;
+        return -1;
+    }
+
+    return 0;
 }

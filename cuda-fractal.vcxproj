@@ -26,6 +26,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\png.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{6B98D71C-6A6E-47A8-8683-64375023F1B7}</ProjectGuid>
