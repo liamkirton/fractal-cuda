@@ -27,8 +27,14 @@ int main() {
     LARGE_INTEGER p_t0;
     QueryPerformanceCounter(&p_t0);
 
+    unsigned int image_width = 2560;
+    unsigned int image_height = 1440;
+
+    image_width *= 1.5;
+    image_height *= 1.5;
+
     unsigned int *result_buffer = new unsigned int[image_width * image_height];
-    mandelbrot(result_buffer);
+    mandelbrot(image_width, image_height, result_buffer);
 
     LARGE_INTEGER p_t1;
     QueryPerformanceCounter(&p_t1);

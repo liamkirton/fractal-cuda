@@ -8,55 +8,97 @@
 
 #include "fractal.h"
 
-__global__ void mandelbrot_kernel(unsigned int *point_buffer) {
-    const double image_shift_x = 0;// 0.485;
-    const double image_shift_y = 0;// 0.94385;
-    const double image_scale = 1;// 18.0;
+__global__ void mandelbrot_kernel(const unsigned int image_width, const unsigned int image_height, unsigned int *point_buffer) {
+    const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    const int pixel_x = tid % image_width;
+    const int pixel_y = tid / image_width;
 
-    unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    const double image_center_re = -0.66;
+    const double image_center_im = 0.15;
+    const double image_scale = 1.66;
 
-    int pixel_x = tid % image_width;
-    int pixel_y = tid / image_width;
+    const double re_c = image_center_re + (-2.0 + pixel_x * 3.0 / image_width) / image_scale;
+    const double im_c = image_center_im + (1.0 - pixel_y * 2.0 / image_height) / image_scale;
 
-    double re_c = (-2.0 + image_shift_x) + pixel_x * 2 / (image_width * image_scale);
-    double im_c = (1.0 - image_shift_y) - pixel_y * 1.5 / (image_height * image_scale);
+    const unsigned int escape_limit = 2048;
 
     double re_z = re_c;
     double im_z = im_c;
-    double abs_z = (re_z * re_z + im_z * im_z);
+    double abs_z = 0.0;
 
-    unsigned short escape = 0xffff;
+    unsigned int escape = 0;
 
-    for (unsigned int i = 0; i < 256; ++i) {
-        double re_z_i = (re_z * re_z) - (im_z * im_z) + re_c;
-        double im_z_i = (2.0 * re_z * im_z) + im_c;
-        re_z = re_z_i;
-        im_z = im_z_i;
-
-        double abs_z_i = (re_z * re_z + im_z * im_z);
-        abs_z = abs_z_i;
-
-        if ((abs_z > 4) && (escape == 0xffff)) {
-            escape = i;
-        }
-        else if ((abs_z < 4) && (escape != 0xffff)) {
-            escape = 0xffff;
+    for (escape = 0; escape < escape_limit; ++escape) {
+        double re_z_i = re_z;
+        re_z = (re_z * re_z) - (im_z * im_z) + re_c;
+        im_z = (2.0 * re_z_i * im_z) + im_c;
+        abs_z = re_z * re_z + im_z * im_z;
+        if (abs_z > 4.0) {
+            break;
         }
     }
 
-    unsigned char r = (escape != 0xffff) ? 0 : 0;
-    unsigned char g = (escape != 0xffff) ? min(255, escape) : 0;
-    unsigned char b = (escape != 0xffff) ? min(255, escape) : 0;
+    abs_z = sqrt(abs_z);
 
-    point_buffer[tid] = (r << 0) | (g << 8) | (b << 16) | (255 << 24);
+    double hue = escape + 1.0 - (log(log(abs_z)) / log(2.0));
+    double sat = 0.85;
+    double val = 0.33 + log(1.0 * escape) / log(1.0 * escape_limit);
+    if (val > 1.0) {
+        val = 1.0;
+    }
+
+    hue += 0;
+    hue = fmod(hue, 360.0);
+    hue /= 360;
+    hue += 4;
+
+    double hue_fract = hue - floor(hue);
+    double p = val * (1.0 - sat);
+    double q = val * (1.0 - sat * hue_fract);
+    double t = val * (1.0 - sat * (1.0 - hue_fract));
+
+    double r = 0;
+    double g = 0;
+    double b = 0;
+
+    if (escape < escape_limit) {
+        switch (static_cast<unsigned char>(floor(hue))) {
+        case 0:
+            r = val; g = t; b = p;
+            break;
+        case 1:
+            r = q; g = val; b = p;
+            break;
+        case 2:
+            r = p; g = val; b = t;
+            break;
+        case 3:
+            r = p; g = q; b = val;
+            break;
+        case 4:
+            r = t; g = p; b = val;
+            break;
+        case 5:
+            r = val; g = p; b = q;
+            break;
+        default:
+            break;
+        }
+        r = floor(r * 255); g = floor(g * 255); b = floor(b * 255);
+    }
+
+    point_buffer[tid] = ((unsigned char)(r) << 0) |
+        ((unsigned char)(g) << 8) |
+        ((unsigned char)(b) << 16) |
+        (255 << 24);
 }
 
-void mandelbrot(unsigned int *result_buffer) {
+void mandelbrot(unsigned int image_width, unsigned int image_height, unsigned int *result_buffer) {
     size_t point_buffer_size = sizeof(unsigned int) * image_width * image_height;
     unsigned int *point_buffer{ nullptr };
     cudaMalloc(&point_buffer, point_buffer_size);
 
-    mandelbrot_kernel<<<image_width * image_height / 1024, 1024>>>(point_buffer);
+    mandelbrot_kernel<<<image_width * image_height / 1024, 1024>>>(image_width, image_height, point_buffer);
 
     cudaError_t cudaError = cudaDeviceSynchronize();
     if (cudaError != cudaSuccess) {

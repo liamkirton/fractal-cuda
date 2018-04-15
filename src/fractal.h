@@ -1,6 +1,3 @@
 #pragma once
 
-const unsigned int image_width = 3200;
-const unsigned int image_height = 1800;
-
-void mandelbrot(unsigned int *result_buffer);
+void mandelbrot(unsigned int image_width, unsigned int image_height, unsigned int *result_buffer);
