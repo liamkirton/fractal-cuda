@@ -1,9 +1,13 @@
 #include <windows.h>
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <ctime>
+#include <iomanip>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <vector>
 
 #include "cuda_runtime.h"
@@ -22,7 +26,12 @@ int write_png(uint64_t image_width, uint64_t image_height, uint32_t *image) {
         return -1;
     }
 
-    FILE *fp = fopen("out.png", "wb");
+    auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+    std::stringstream fn; 
+    fn << std::put_time(std::localtime(&now), "%Y%m%d-%H%M%S.png");
+
+    FILE *fp = fopen(fn.str().c_str(), "wb");
 
     png_init_io(png_ptr, fp);
     png_set_IHDR(png_ptr,

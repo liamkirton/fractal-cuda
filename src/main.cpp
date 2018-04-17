@@ -15,8 +15,8 @@ int main() {
     LARGE_INTEGER p_t0{ 0 };
     LARGE_INTEGER p_t1{ 0 };
 
-    unsigned int image_width = 2560 * 4;
-    unsigned int image_height = 1440 * 4;
+    unsigned int image_width = 2560 * 8;
+    unsigned int image_height = 1440 * 8;
     uint32_t *image = new uint32_t[image_width * image_height];
 
     std::wcout << L"[+] Generating Mandelbrot: " << image_width << L"x" << image_height << L" (" << image_width * image_height * sizeof(uint32_t) << L" bytes)" << std::endl;

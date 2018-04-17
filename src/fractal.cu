@@ -15,14 +15,26 @@ __global__ void mandelbrot_kernel(const uint64_t image_width, const uint64_t ima
     const int pixel_x = (image_chunk + tid) % image_width;
     const int pixel_y = (image_chunk + tid) / image_width;
 
-    const double image_center_re = -0.66;
+    /*const double image_center_re = -0.66;
     const double image_center_im = 0.15;
-    const double image_scale = 1.66;
+    const double image_scale = 1.66;*/
+
+    /*const double image_center_re = -0.7440;
+    const double image_center_im = 0.1102;
+    const double image_scale = 1/0.005;*/
+
+    //const double image_center_re = -0.74516;
+    //const double image_center_im = 0.112575;
+    //const double image_scale = 1 / 6.5E-4;
+
+    const double image_center_re = -0.235125;
+    const double image_center_im = 0.827215;
+    const double image_scale = 1 / 4.0E-5;
 
     const double re_c = image_center_re + (-2.0 + pixel_x * 3.0 / image_width) / image_scale;
     const double im_c = image_center_im + (1.0 - pixel_y * 2.0 / image_height) / image_scale;
 
-    const unsigned int escape_limit = 1024;
+    const unsigned int escape_limit = 16384;
 
     double re_z = re_c;
     double im_z = im_c;
