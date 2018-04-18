@@ -1,0 +1,15 @@
+/*const double image_center_re = 0.0;
+    const double image_center_im = 0.0;
+    const double image_scale = 1.00;*/
+
+    /*const double image_center_re = -0.66;
+    const double image_center_im = 0.15;
+    const double image_scale = 1.66;*/
+
+    /*const double image_center_re = -0.7440;
+    const double image_center_im = 0.1102;
+    const double image_scale = 1/0.005;*/
+
+    /*const double image_center_re = -0.74516;
+    const double image_center_im = 0.112575;
+    const double image_scale = 1 / 6.5E-4;*/

@@ -4,7 +4,12 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <sstream>
+#include <thread>
 #include <vector>
+
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
 
 #include "fractal.h"
 
@@ -12,29 +17,40 @@ int main() {
     LARGE_INTEGER p_freq{ 0 };
     QueryPerformanceFrequency(&p_freq);
 
-    LARGE_INTEGER p_t0{ 0 };
-    LARGE_INTEGER p_t1{ 0 };
+    unsigned int image_width = 1024*2;
+    unsigned int image_height = 768;
 
-    unsigned int image_width = 2560 * 8;
-    unsigned int image_height = 1440 * 8;
-    uint32_t *image = new uint32_t[image_width * image_height];
+    init(image_width, image_height);
 
-    std::wcout << L"[+] Generating Mandelbrot: " << image_width << L"x" << image_height << L" (" << image_width * image_height * sizeof(uint32_t) << L" bytes)" << std::endl;
+    std::vector<std::thread> png_threads;
 
-    QueryPerformanceCounter(&p_t0);
-    mandelbrot(image_width, image_height, image);
-    QueryPerformanceCounter(&p_t1);
+    for (double i = 1.0; i < 2.0; i += 1.0) {
+        uint32_t *image = new uint32_t[image_width * image_height];
 
-    std::wcout << L"[+] Generation Complete: " << (p_t1.QuadPart - p_t0.QuadPart) / p_freq.QuadPart << L" secs." << std::endl;
+        std::wcout << L"[+] Generating Mandelbrot: " << image_width << L"x" << image_height << L" (" << image_width * image_height * sizeof(uint32_t) << L" bytes)" << std::endl;
 
-    QueryPerformanceCounter(&p_t0);
-    write_png(image_width, image_height, image);
-    QueryPerformanceCounter(&p_t1);
+        LARGE_INTEGER p_t0{ 0 };
+        LARGE_INTEGER p_t1{ 0 };
 
-    std::wcout << L"[+] PNG Complete: " << (p_t1.QuadPart - p_t0.QuadPart) / p_freq.QuadPart << L" secs." << std::endl;
+        QueryPerformanceCounter(&p_t0);
+        mandelbrot(image_width, image_height, i, image);
+        QueryPerformanceCounter(&p_t1);
 
-    delete[] image;
-    image = nullptr;
+        std::wcout << L"[+] Generation Complete: " << (p_t1.QuadPart - p_t0.QuadPart) / p_freq.QuadPart << L" secs." << std::endl;
+
+        png_threads.push_back(std::thread([p_freq, image_width, image_height, i](uint32_t *image) {
+            std::stringstream name;
+            name << i;
+            write_png(image_width, image_height, image, name.str());
+            delete[] image;
+        }, image));
+    }
+
+    for (auto &t : png_threads) {
+        t.join();
+    }
+
+    uninit(image_width, image_height);
 
     return 0;
 }

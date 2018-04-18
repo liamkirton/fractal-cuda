@@ -17,7 +17,7 @@
 
 #include "fractal.h"
 
-int write_png(uint64_t image_width, uint64_t image_height, uint32_t *image) {
+int write_png(uint64_t image_width, uint64_t image_height, uint32_t *image, std::string &name) {
     png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
     png_infop info_ptr = png_create_info_struct(png_ptr);
 
@@ -29,7 +29,7 @@ int write_png(uint64_t image_width, uint64_t image_height, uint32_t *image) {
     auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
     std::stringstream fn; 
-    fn << std::put_time(std::localtime(&now), "%Y%m%d-%H%M%S.png");
+    fn << std::put_time(std::localtime(&now), "%Y%m%d-%H%M%S ") << name << ".png";
 
     FILE *fp = fopen(fn.str().c_str(), "wb");
 
