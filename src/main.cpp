@@ -17,34 +17,36 @@ int main() {
     LARGE_INTEGER p_freq{ 0 };
     QueryPerformanceFrequency(&p_freq);
 
-    unsigned int image_width = 1024*2;
-    unsigned int image_height = 768;
+    const unsigned int image_width = 1024;
+    const unsigned int image_height = 1024;
+
+    const double image_center_re = -1.16403856759996471;
+    const double image_center_im = 2.29637178821327975e-01;
+    const double image_scale = 11000;
 
     init(image_width, image_height);
 
     std::vector<std::thread> png_threads;
 
-    for (double i = 1.0; i < 2.0; i += 1.0) {
-        uint32_t *image = new uint32_t[image_width * image_height];
+    std::wcout << L"[+] Generating Mandelbrot: " << image_width << L"x" << image_height << L" (" << image_width * image_height * sizeof(uint32_t) << L" bytes)" << std::endl;
 
-        std::wcout << L"[+] Generating Mandelbrot: " << image_width << L"x" << image_height << L" (" << image_width * image_height * sizeof(uint32_t) << L" bytes)" << std::endl;
+    LARGE_INTEGER p_t0{ 0 };
+    LARGE_INTEGER p_t1{ 0 };
 
-        LARGE_INTEGER p_t0{ 0 };
-        LARGE_INTEGER p_t1{ 0 };
+    uint32_t *image = new uint32_t[image_width * image_height];
 
-        QueryPerformanceCounter(&p_t0);
-        mandelbrot(image_width, image_height, i, image);
-        QueryPerformanceCounter(&p_t1);
+    QueryPerformanceCounter(&p_t0);
+    mandelbrot(image, image_width, image_height, image_center_re, image_center_im, image_scale);
+    QueryPerformanceCounter(&p_t1);
 
-        std::wcout << L"[+] Generation Complete: " << (p_t1.QuadPart - p_t0.QuadPart) / p_freq.QuadPart << L" secs." << std::endl;
+    std::wcout << L"[+] Generation Complete: " << (p_t1.QuadPart - p_t0.QuadPart) / p_freq.QuadPart << L" secs." << std::endl;
 
-        png_threads.push_back(std::thread([p_freq, image_width, image_height, i](uint32_t *image) {
-            std::stringstream name;
-            name << i;
-            write_png(image_width, image_height, image, name.str());
-            delete[] image;
-        }, image));
-    }
+    png_threads.push_back(std::thread([p_freq, image_width, image_height](uint32_t *image) {
+        std::stringstream name;
+        name << 0;
+        write_png(image, image_width, image_height, name.str());
+        delete[] image;
+    }, image));
 
     for (auto &t : png_threads) {
         t.join();
