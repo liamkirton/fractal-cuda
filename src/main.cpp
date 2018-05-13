@@ -17,12 +17,17 @@ int main() {
     LARGE_INTEGER p_freq{ 0 };
     QueryPerformanceFrequency(&p_freq);
 
-    const unsigned int image_width = 1024;
-    const unsigned int image_height = 1024;
+    const unsigned int image_width = 4096;
+    const unsigned int image_height = 4096;
 
-    const double image_center_re = -1.16403856759996471;
+    /*const double image_center_re = -1.16403856759996471;
     const double image_center_im = 2.29637178821327975e-01;
-    const double image_scale = 11000;
+    double image_scale = 1024;
+*/
+
+    const double image_center_re = -0.74516;
+    const double image_center_im = 0.112575;
+    const double image_scale = 1 / 6.5E-4;
 
     init(image_width, image_height);
 
@@ -38,8 +43,6 @@ int main() {
     QueryPerformanceCounter(&p_t0);
     mandelbrot(image, image_width, image_height, image_center_re, image_center_im, image_scale);
     QueryPerformanceCounter(&p_t1);
-
-    std::wcout << L"[+] Generation Complete: " << (p_t1.QuadPart - p_t0.QuadPart) / p_freq.QuadPart << L" secs." << std::endl;
 
     png_threads.push_back(std::thread([p_freq, image_width, image_height](uint32_t *image) {
         std::stringstream name;

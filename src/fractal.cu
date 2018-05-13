@@ -10,8 +10,8 @@
 
 #include "fractal.h"
 
-const uint32_t escape_block = 16384;
-const uint32_t escape_limit = 1048576;
+const uint32_t escape_block = 4096;
+const uint32_t escape_limit = 65536;
 
 __global__ void mandelbrot_kernel(uint64_t *chunk_buffer, const uint64_t image_width, const uint64_t image_height, const double image_re, const double image_im, const double image_scale, const uint64_t image_chunk) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -61,14 +61,10 @@ __global__ void mandelbrot_kernel_colour(uint64_t *chunk_buffer, uint32_t *image
 
     abs_z = sqrtf(abs_z);
 
-    double hue = escape;// +1.0 - (log(log(abs_z)) / log(2.0));
+    double hue = 360.0*log(1.0*escape)/log(1.0*escape_limit) + 1.0 - (log(log(abs_z)) / log(2.0));
     double sat = 0.85;
     double val = 1.0;
-    if (val > 1.0) {
-        val = 1.0;
-    }
 
-    hue += 0;
     hue = fmod(hue, 360.0);
     hue /= 60;
 
@@ -153,6 +149,10 @@ int uninit(uint64_t image_width, uint64_t image_height) {
 int mandelbrot(uint32_t *image, const uint64_t image_width, const uint64_t image_height, const double image_center_re, const double image_center_im, const double image_scale) {
     cudaError_t cudaError;
 
+    std::wcout << "[+] z = " << image_center_re << " + " << image_center_im << "i; scale = " << (1.0 / image_scale) << "; "
+        << (image_center_re + (-2.0 / image_width) / image_scale) << " : "
+        << (image_center_im + (1.0 / image_height) / image_scale) << std::endl;
+
     std::wcout << L"[+] Chunks: "
         << 1 + image_width * image_height / (groups * threads)
         << L" " << std::flush;
@@ -169,16 +169,16 @@ int mandelbrot(uint32_t *image, const uint64_t image_width, const uint64_t image
             std::wcout << L"." << std::flush;
             mandelbrot_kernel<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(threads)>>>(chunk_buffer, image_width, image_height, image_center_re, image_center_im, image_scale, image_chunk);
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
-                std::wcout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError;
-                break;
+                std::wcout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError << std::endl;
+                return -1;
             }
         }
 
         std::wcout << L"*" << std::flush;
         mandelbrot_kernel_colour<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(threads)>>>(chunk_buffer, image_chunk_buffer, image_width, image_height, image_chunk);
         if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
-            std::wcout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError;
-            break;
+            std::wcout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError << std::endl;
+            return -1;
         }
 
         cudaMemcpy(&image[image_chunk], image_chunk_buffer, chunk_groups * threads * sizeof(uint32_t), cudaMemcpyDeviceToHost);
