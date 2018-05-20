@@ -13,3 +13,8 @@
     /*const double image_center_re = -0.74516;
     const double image_center_im = 0.112575;
     const double image_scale = 1 / 6.5E-4;*/
+
+/*const double image_center_re = -1.16403856759996471;
+    const double image_center_im = 2.29637178821327975e-01;
+    double image_scale = 1024;
+*/
