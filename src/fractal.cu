@@ -13,7 +13,7 @@
 constexpr uint64_t groups = 8192;
 constexpr uint64_t threads = 1024;
 
-constexpr uint32_t escape_block = 4096;
+constexpr uint32_t escape_block = 1024;
 constexpr uint32_t escape_limit = 65536;
 
 __global__ void mandelbrot_kernel(uint64_t *chunk_buffer, const uint64_t image_width, const uint64_t image_height, const double image_re, const double image_im, const double image_scale, const uint64_t image_chunk, const uint32_t escape_i) {
@@ -61,10 +61,8 @@ __global__ void mandelbrot_kernel_colour(uint64_t *chunk_buffer, uint32_t *image
     double im_z = reinterpret_cast<double *>(chunk_buffer)[tid * 3 + 2];
     double abs_z = sqrtf(re_z * re_z + im_z * im_z);
 
-    /*double hue = 360.0*log(1.0*escape)/log(1.0*escape_limit) + 1.0 - (log(log(abs_z)) / log(2.0));
-    double sat = 0.85;
-    double val = 1.0;*/
-    double hue = 360.0*(log(1.0*escape) + log(abs_z)) / (log(1.0*escape_limit) + log(2.0));
+    //double hue = 360.0 * log(1.0 * escape) / log(1.0 * escape_limit) + 1.0 - (log(log(abs_z)) / log(2.0)); 
+    double hue = 360.0 * (log(1.0 * escape) - log(log(abs_z))) / (log(1.0 * escape_limit) + log(2.0));
     double sat = 0.85;
     double val = 1.0;
 
@@ -106,9 +104,10 @@ __global__ void mandelbrot_kernel_colour(uint64_t *chunk_buffer, uint32_t *image
         r = floor(r * 255); g = floor(g * 255); b = floor(b * 255);
     }
 
-    image_chunk_buffer[tid] = ((unsigned char)(r) << 0) |
-        ((unsigned char)(g) << 8) |
-        ((unsigned char)(b) << 16) |
+    image_chunk_buffer[tid] =
+        (static_cast<unsigned char>(r)) |
+        (static_cast<unsigned char>(g) << 8) |
+        (static_cast<unsigned char>(b) << 16) |
         (255 << 24);
 }
 

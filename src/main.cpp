@@ -17,20 +17,20 @@ int main() {
     LARGE_INTEGER p_freq{ 0 };
     QueryPerformanceFrequency(&p_freq);
 
-    const unsigned int image_width = 2048;
-    const unsigned int image_height = 2048;
+    const unsigned int image_width = 1920;
+    const unsigned int image_height = 1080;
 
-    //const double image_center_re = 0;
-    //const double image_center_im = 0;
-    //const double image_scale = 1.0;
+    const double image_center_re = 0;
+    const double image_center_im = 0;
+    const double image_scale = 0.5;
 
-    /*const double image_center_re = -1.16403856759996471;
-    const double image_center_im = 2.29637178821327975e-01;
-    double image_scale = 1024;*/
+    //const double image_center_re = -1.16403856759996471;
+    //const double image_center_im = 2.29637178821327975e-01;
+    //double image_scale = 1024;
 
-    const double image_center_re = -0.74516;
-    const double image_center_im = 0.112575;
-    const double image_scale = 1 / 6.5E-4;
+    //const double image_center_re = -0.74516;
+    //const double image_center_im = 0.112575;
+    //const double image_scale = 1 / 6.5E-4;
 
     init(image_width, image_height);
 
