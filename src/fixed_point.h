@@ -15,6 +15,10 @@ public:
         memcpy(&data, &v.data, sizeof(data));
     }
 
+    __host__ __device__ fixed_point(const fixed_point<I, F> *v) {
+        memcpy(&data, &v->data, sizeof(data));
+    }
+
     template<typename T>
     __host__ __device__ fixed_point(const T &v) {
         set(v);
@@ -186,6 +190,11 @@ public:
         add(t);
     }
 
+    inline __host__ __device__ void add(const double &v) {
+        fixed_point<I, F> t(v);
+        add(t);
+    }
+
     inline __host__ __device__ void complement() {
         for (uint32_t i = 0; i < I + F; ++i) {
             data[i] = ~data[i];
@@ -219,6 +228,11 @@ public:
         multiply(t);
     }
 
+    inline __host__ __device__ void multiply(const double &v) {
+        fixed_point<I, F> t(v);
+        multiply(t);
+    }
+
     inline __host__ __device__ void negate() {
         for (uint32_t i = 0; i < I + F; ++i) {
             data[i] = ~data[i];
@@ -246,12 +260,15 @@ public:
     }
 
     inline __host__ __device__ void shiftr(const uint64_t v) {
-        /*if ((v % 32) == 0) {
+        if ((v % 32) == 0) {
             uint64_t offset = v / 32;
-            memmove(&data, &data[offset], sizeof(uint32_t) * (I + F - offset));
+            for (int32_t i = 0; i <= I + F - offset; ++i) {
+                data[i] = data[i + offset];
+            }
+            //memmove(&data, &data[offset], sizeof(uint32_t) * (I + F - offset));
             memset(&data[I + F - offset], 0, sizeof(uint32_t) * offset);
         }
-        else {*/
+        else {
             for (int32_t i = 0; i <= I + F - 1; ++i) {
                 for (int32_t j = 0; j <= 31; ++j) {
                     int32_t sbit = i * 32 + j + static_cast<int32_t>(v);
@@ -259,7 +276,7 @@ public:
                     data[i] = (data[i] & ~(1 << j)) | (sbit_value << j);
                 }
             }
-        //}
+        }
     }
 
 public:

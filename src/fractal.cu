@@ -12,30 +12,70 @@
 #include "fixed_point.h"
 
 constexpr uint64_t groups = 128;
-constexpr uint64_t threads = 128;
+constexpr uint64_t threads = 512;
 
-constexpr uint32_t escape_block = 512;
-constexpr uint32_t escape_limit = 512;
+constexpr uint32_t escape_block = 12 * 1048576;
+constexpr uint32_t escape_limit = 12 * 1048576;
 
 __global__ void mandelbrot_kernel(uint64_t *chunk_buffer, const uint64_t image_width, const uint64_t image_height, const double image_re, const double image_im, const double image_scale, const uint64_t image_chunk, const uint32_t escape_i) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
     const int pixel_x = (image_chunk + tid) % image_width;
     const int pixel_y = (image_chunk + tid) / image_width;
 
-    //const double re_c = image_re + (-2.0 + pixel_x * 3.0 / image_width) / image_scale;
-    //const double im_c = image_im + (1.0 - pixel_y * 2.0 / image_height) / image_scale;
-
-    fixed_point<1, 2> re_c(-2.0 + pixel_x * 3.0 / image_width);
-    fixed_point<1, 2> im_c(1.0 - pixel_y * 2.0 / image_height);
+    const double re_c = image_re + (-2.0 + pixel_x * 3.0 / image_width) / image_scale;
+    const double im_c = image_im + (1.0 - pixel_y * 2.0 / image_height) / image_scale;
 
     uint32_t escape = static_cast<uint32_t>(chunk_buffer[tid * 3]);
-    /*double re_z = reinterpret_cast<double *>(chunk_buffer)[tid * 3 + 1];
+    double re_z = reinterpret_cast<double *>(chunk_buffer)[tid * 3 + 1];
     double im_z = reinterpret_cast<double *>(chunk_buffer)[tid * 3 + 2];
-    double abs_z = 0.0;*/
+    double abs_z = 0.0;
 
-    fixed_point<1, 2> re_z(reinterpret_cast<double *>(chunk_buffer)[tid * 3 + 1]);
-    fixed_point<1, 2> im_z(reinterpret_cast<double *>(chunk_buffer)[tid * 3 + 1]);
-    fixed_point<1, 2> abs_z;
+    if (escape_i == 0) {
+        escape = escape_limit;
+        re_z = re_c;
+        im_z = im_c;
+    }
+
+    if (escape == escape_limit) {
+        for (uint32_t i = 0; i < escape_block; ++i) {
+            double re_z_i = re_z;
+            re_z = (re_z * re_z) - (im_z * im_z) + re_c;
+            im_z = (2.0 * re_z_i * im_z) + im_c;
+            abs_z = re_z * re_z + im_z * im_z;
+            if (abs_z > 4.0) {
+                escape = i + escape_i * escape_block;
+                break;
+            }
+        }
+    }
+
+    chunk_buffer[tid * 3] = escape;
+    reinterpret_cast<double *>(chunk_buffer)[tid * 3 + 1] = re_z;
+    reinterpret_cast<double *>(chunk_buffer)[tid * 3 + 2] = im_z;
+}
+
+template<uint32_t I, uint32_t F>
+__global__ void mandelbrot_kernel_fp(uint64_t *chunk_buffer, const uint64_t image_width, const uint64_t image_height, const double image_re, const double image_im, const double image_scale, const uint64_t image_chunk, const uint32_t escape_i) {
+    const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    const int pixel_x = (image_chunk + tid) % image_width;
+    const int pixel_y = (image_chunk + tid) / image_width;
+
+    fixed_point<I, F> i_scale(0.5);
+    for (uint32_t i = 0; i < 76; ++i) {
+        i_scale.multiply(0.5);
+    }
+
+    fixed_point<I, F> re_c(-2.0 + pixel_x * 3.0 / image_width);
+    re_c.multiply(i_scale);
+    re_c.add(image_re);
+    fixed_point<I, F> im_c(1.0 - pixel_y * 2.0 / image_height);
+    im_c.multiply(i_scale);
+    im_c.add(image_im);
+
+    uint32_t escape = static_cast<uint32_t>(chunk_buffer[tid * 3]);
+
+    fixed_point<I, F> re_z; // = prev
+    fixed_point<I, F> im_z; // = prev
 
     if (escape_i == 0) {
         escape = escape_limit;
@@ -43,28 +83,23 @@ __global__ void mandelbrot_kernel(uint64_t *chunk_buffer, const uint64_t image_w
         im_z.set(im_c);
     }
 
+    fixed_point<I, F> re_prod(re_z);
+    re_prod.multiply(re_z);
+
+    fixed_point<I, F> im_prod(im_z);
+    im_prod.multiply(im_z);
+
+    fixed_point<I, F> re_imed;
+    fixed_point<I, F> im_imed;
+
     if (escape == escape_limit) {
         for (uint32_t i = 0; i < escape_block; ++i) {
-            /*double re_z_i = re_z;
-            re_z = (re_z * re_z) - (im_z * im_z) + re_c;
-            im_z = (2.0 * re_z_i * im_z) + im_c;
-            abs_z = re_z * re_z + im_z * im_z;
-            if (abs_z > 4.0) {
-                escape = i + escape_i * escape_block;
-                break;
-            }*/
-            fixed_point<1, 2> re_prod(re_z);
-            fixed_point<1, 2> im_prod(im_z);
-
-            re_prod.multiply(re_z);
-            im_prod.multiply(im_z);
-
-            fixed_point<1, 2> re_imed(im_prod);
+            re_imed.set(im_prod);
             re_imed.negate();
             re_imed.add(re_prod);
             re_imed.add(re_c);
 
-            fixed_point<1, 2> im_imed(2);
+            im_imed.set(2);
             im_imed.multiply(re_z);
             im_imed.multiply(im_z);
             im_imed.add(im_c);
@@ -78,10 +113,7 @@ __global__ void mandelbrot_kernel(uint64_t *chunk_buffer, const uint64_t image_w
             im_prod.set(im_z);
             im_prod.multiply(im_z);
 
-            fixed_point<1, 2> abs(re_prod);
-            abs.add(im_prod);
-
-            if (abs.get_integer() > 4) {
+            if (re_prod.get_integer() + im_prod.get_integer() > 4) {
                 escape = i + escape_i * escape_block;
                 break;
             }
@@ -89,8 +121,8 @@ __global__ void mandelbrot_kernel(uint64_t *chunk_buffer, const uint64_t image_w
     }
 
     chunk_buffer[tid * 3] = escape;
-    reinterpret_cast<double *>(chunk_buffer)[tid * 3 + 1] = 0;// re_z;
-    reinterpret_cast<double *>(chunk_buffer)[tid * 3 + 2] = 0;// im_z;
+    reinterpret_cast<double *>(chunk_buffer)[tid * 3 + 1] = static_cast<double>(1.0 * re_z.get_integer());
+    reinterpret_cast<double *>(chunk_buffer)[tid * 3 + 2] = static_cast<double>(1.0 * im_z.get_integer());
 }
 
 __global__ void mandelbrot_kernel_colour(uint64_t *chunk_buffer, uint32_t *image_chunk_buffer, const uint64_t image_width, const uint64_t image_height, const uint64_t image_chunk) {
@@ -101,8 +133,8 @@ __global__ void mandelbrot_kernel_colour(uint64_t *chunk_buffer, uint32_t *image
     double im_z = reinterpret_cast<double *>(chunk_buffer)[tid * 3 + 2];
     double abs_z = sqrtf(re_z * re_z + im_z * im_z);
 
-    //double hue = 360.0 * log(1.0 * escape) / log(1.0 * escape_limit) + 1.0 - (log(log(abs_z)) / log(2.0)); 
-    double hue = 360.0 * (log(1.0 * escape) - log(log(abs_z))) / (log(1.0 * escape_limit) + log(2.0));
+    double hue = 360.0 * log(1.0 * escape) / log(1.0 * escape_limit) + 1.0 - (log(log(abs_z)) / log(2.0)); 
+    //double hue = 360.0 * (log(1.0 * escape) - log(log(abs_z))) / (log(1.0 * escape_limit) + log(2.0));
     double sat = 0.85;
     double val = 1.0;
 
@@ -185,9 +217,9 @@ int uninit(uint64_t image_width, uint64_t image_height) {
 int mandelbrot(uint32_t *image, const uint64_t image_width, const uint64_t image_height, const double image_center_re, const double image_center_im, const double image_scale) {
     cudaError_t cudaError;
 
-    std::wcout << "[+] Image: z = " << image_center_re << " + " << image_center_im << "i; scale = " << (1.0 / image_scale) << "; "
+    /*std::wcout << "[+] Image: z = " << image_center_re << " + " << image_center_im << "i; scale = " << (1.0 / image_scale) << "; "
         << (image_center_re + (-2.0 / image_width) / image_scale) << " : "
-        << (image_center_im + (1.0 / image_height) / image_scale) << std::endl;
+        << (image_center_im + (1.0 / image_height) / image_scale) << std::endl;*/
 
     std::wcout << L"[+] Chunks: "
         << 1 + image_width * image_height / (groups * threads)
@@ -202,7 +234,8 @@ int mandelbrot(uint32_t *image, const uint64_t image_width, const uint64_t image
         std::wcout << L"+" << std::flush;
 
         for (uint32_t i = 0; i < (escape_limit / escape_block); ++i) {
-            mandelbrot_kernel<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(threads)>>>(chunk_buffer, image_width, image_height, image_center_re, image_center_im, image_scale, image_chunk, i);
+            mandelbrot_kernel_fp<2, 6><<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(threads)>>>(chunk_buffer, image_width, image_height, image_center_re, image_center_im, image_scale, image_chunk, i);
+            //mandelbrot_kernel<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(threads)>>>(chunk_buffer, image_width, image_height, image_center_re, image_center_im, image_scale, image_chunk, i);
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                 std::wcout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError << std::endl;
                 return -1;
