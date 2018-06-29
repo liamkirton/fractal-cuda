@@ -17,8 +17,8 @@ int main() {
     LARGE_INTEGER p_freq{ 0 };
     QueryPerformanceFrequency(&p_freq);
 
-    const unsigned int image_width = 1920;
-    const unsigned int image_height = 1080;
+    const unsigned int image_width = 320;
+    const unsigned int image_height = 240;
 
     const double image_center_re = 0;
     const double image_center_im = 0;

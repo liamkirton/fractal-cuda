@@ -22,6 +22,7 @@
     <CudaCompile Include="src\fractal.cu" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\fixed_point.h" />
     <ClInclude Include="src\fractal.h" />
   </ItemGroup>
   <ItemGroup>
