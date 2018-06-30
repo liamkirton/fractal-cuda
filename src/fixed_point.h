@@ -1,4 +1,3 @@
-
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #pragma once
@@ -43,6 +42,13 @@ public:
         if (i < (I + F) * 32) {
             data[i / 32] = data[i / 32] | ((v & 0x1) << (i % 32));
         }
+    }
+
+    inline __host__ __device__ double get_double() const {
+        if (I > 1) {
+            return static_cast<const double>(*reinterpret_cast<const int64_t *>(&data[F]));
+        }
+        return static_cast<const double>(*reinterpret_cast<const int32_t *>(&data[F]));
     }
 
     inline __host__ __device__ int64_t get_integer() const {
