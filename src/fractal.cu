@@ -222,7 +222,7 @@ __global__ void kernel_mandelbrot(kernel_block<double> *blocks, kernel_params<do
     double im = block->im_;
     double abs = 0.0;
 
-    if (params->i_ == 0) {
+    if (params->escape_block_i_ == 0) {
         escape = params->escape_limit_;
         re = re_c;
         im = im_c;
@@ -235,7 +235,7 @@ __global__ void kernel_mandelbrot(kernel_block<double> *blocks, kernel_params<do
             im = (2.0 * re_z_i * im) + im_c;
             abs = re * re + im * im;
             if (abs > 4.0) {
-                escape = i + params->i_ * params->escape_block_;
+                escape = i + params->escape_block_i_ * params->escape_block_;
                 break;
             }
         }
@@ -265,7 +265,7 @@ __global__ void kernel_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kerne
     fixed_point<I, F> re_z(block->re_);
     fixed_point<I, F> im_z(block->im_);
 
-    if (params->i_ == 0) {
+    if (params->escape_block_i_ == 0) {
         escape = params->escape_limit_;
         re_z.set(re_c);
         im_z.set(im_c);
@@ -302,7 +302,7 @@ __global__ void kernel_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kerne
             im_prod.multiply(im_z);
 
             if (re_prod.get_integer() + im_prod.get_integer() > 4) {
-                escape = i + params->i_ * params->escape_block_;
+                escape = i + params->escape_block_i_ * params->escape_block_;
                 break;
             }
         }

@@ -28,13 +28,13 @@ struct kernel_params {
             const T &scale) :
                 image_width_(image_width), image_height_(image_height),
                 escape_block_(escape_block), escape_limit_(escape_limit),
-                image_chunk_(0), i_(0), re_(re), im_(im), scale_(scale) {};
+                image_chunk_(0), escape_block_i_(0), re_(re), im_(im), scale_(scale) {};
     uint64_t image_width_;
     uint64_t image_height_;
     uint64_t escape_block_;
     uint64_t escape_limit_;
     uint64_t image_chunk_;
-    uint64_t i_;
+    uint64_t escape_block_i_;
     T re_;
     T im_;
     T scale_;

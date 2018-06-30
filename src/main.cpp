@@ -28,8 +28,8 @@ int main() {
         }, image, image_width, image_height));
     };
 
-    fractal<2, 4> f(640, 480);
-    f.limits(256, 256);
+    fractal<2, 4> f(4096, 4096);
+    f.limits(65536, 65536 * 32);
     f.specify(-0.74516, 0.112575, 1 / 6.5E-4);
 
     std::wcout << L"[+] Generating Fractal: " << f.image_width() << L"x" << f.image_height() << " (" << f.image_size() << L" bytes)" << std::endl;
