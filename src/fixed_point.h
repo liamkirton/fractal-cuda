@@ -214,13 +214,16 @@ public:
             }
             result.data[i] = accum.data[F];
 
-            // Combine: accum.shiftr(32); accum.zero_fractional();
-            accum.shiftr(32); accum.zero_fractional();
-            /*memmove(&accum.data[F], &accum.data[F + 1], sizeof(uint32_t) * (2 * I + F - 1));
-            memset(&accum.data, 0, sizeof(uint32_t) * F);*/
+            // Combine: accum.shiftr_32(); accum.zero_fractional();
+            for (int32_t i = F; i < 2 * (I + F) - 1; ++i) {
+                accum.data[i] = accum.data[i + 1];
+            }
+            accum.data[2 * (I + F) - 1] = 0;
+            memset(&accum.data, 0, sizeof(uint32_t) * F);
         }
 
-        memcpy(&data, &result.data[F], sizeof(data)); // Combine: result.shiftr(32 * F); set(result);
+        // Combine: result.shiftr(32 * F); set(result);
+        memcpy(&data, &result.data[F], sizeof(data));
     }
 
     inline __host__ __device__ void multiply(const uint64_t &v) {
@@ -265,7 +268,6 @@ public:
             for (int32_t i = 0; i <= I + F - offset; ++i) {
                 data[i] = data[i + offset];
             }
-            //memmove(&data, &data[offset], sizeof(uint32_t) * (I + F - offset));
             memset(&data[I + F - offset], 0, sizeof(uint32_t) * offset);
         }
         else {
@@ -278,6 +280,13 @@ public:
             }
         }
     }
+    inline __host__ __device__ void shiftr_32() {
+        for (int32_t i = 0; i < I + F - 1; ++i) {
+            data[i] = data[i + 1];
+        }
+        data[I + F - 1] = 0;
+    }
+
 
 public:
     uint32_t data[I + F];

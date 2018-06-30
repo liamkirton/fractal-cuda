@@ -17,8 +17,8 @@ int main() {
     LARGE_INTEGER p_freq{ 0 };
     QueryPerformanceFrequency(&p_freq);
 
-    const unsigned int image_width = 1920;
-    const unsigned int image_height = 1024;
+    const unsigned int image_width = 320;
+    const unsigned int image_height = 240;
 
     const double image_center_re = -1.16403856759996471;
     const double image_center_im = 2.29637178821327975e-01;
@@ -41,6 +41,8 @@ int main() {
             break;
         }
         QueryPerformanceCounter(&p_t1);
+
+        std::wcout << "[+] Time: " << (1.0 * (p_t1.QuadPart - p_t0.QuadPart)) / p_freq.QuadPart << std::endl;
 
         image_scale *= 2.0;
 

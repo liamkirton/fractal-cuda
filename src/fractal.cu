@@ -11,11 +11,11 @@
 #include "fractal.h"
 #include "fixed_point.h"
 
-constexpr uint64_t groups = 128;
+constexpr uint64_t groups = 64;
 constexpr uint64_t threads = 512;
 
-constexpr uint32_t escape_block = 12 * 1048576;
-constexpr uint32_t escape_limit = 12 * 1048576;
+constexpr uint32_t escape_block = 4096;
+constexpr uint32_t escape_limit = 4096;
 
 __global__ void mandelbrot_kernel(uint64_t *chunk_buffer, const uint64_t image_width, const uint64_t image_height, const double image_re, const double image_im, const double image_scale, const uint64_t image_chunk, const uint32_t escape_i) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -61,7 +61,7 @@ __global__ void mandelbrot_kernel_fp(uint64_t *chunk_buffer, const uint64_t imag
     const int pixel_y = (image_chunk + tid) / image_width;
 
     fixed_point<I, F> i_scale(0.5);
-    for (uint32_t i = 0; i < 76; ++i) {
+    for (uint32_t i = 0; i < 12; ++i) {
         i_scale.multiply(0.5);
     }
 
@@ -217,10 +217,6 @@ int uninit(uint64_t image_width, uint64_t image_height) {
 int mandelbrot(uint32_t *image, const uint64_t image_width, const uint64_t image_height, const double image_center_re, const double image_center_im, const double image_scale) {
     cudaError_t cudaError;
 
-    /*std::wcout << "[+] Image: z = " << image_center_re << " + " << image_center_im << "i; scale = " << (1.0 / image_scale) << "; "
-        << (image_center_re + (-2.0 / image_width) / image_scale) << " : "
-        << (image_center_im + (1.0 / image_height) / image_scale) << std::endl;*/
-
     std::wcout << L"[+] Chunks: "
         << 1 + image_width * image_height / (groups * threads)
         << L" " << std::flush;
@@ -234,7 +230,7 @@ int mandelbrot(uint32_t *image, const uint64_t image_width, const uint64_t image
         std::wcout << L"+" << std::flush;
 
         for (uint32_t i = 0; i < (escape_limit / escape_block); ++i) {
-            mandelbrot_kernel_fp<2, 6><<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(threads)>>>(chunk_buffer, image_width, image_height, image_center_re, image_center_im, image_scale, image_chunk, i);
+            mandelbrot_kernel_fp<2, 4><<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(threads)>>>(chunk_buffer, image_width, image_height, image_center_re, image_center_im, image_scale, image_chunk, i);
             //mandelbrot_kernel<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(threads)>>>(chunk_buffer, image_width, image_height, image_center_re, image_center_im, image_scale, image_chunk, i);
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                 std::wcout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError << std::endl;
