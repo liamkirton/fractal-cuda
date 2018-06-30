@@ -31,6 +31,10 @@ public:
     // Accessors & Initialisers
     //
 
+    inline __host__ __device__ operator double() {
+        return get_double();
+    }
+
     inline __host__ __device__ uint32_t bit_get(const uint64_t i) const {
         if (i < (I + F) * 32) {
             return (data[i / 32] & (1 << (i % 32))) >> (i % 32);
@@ -292,7 +296,6 @@ public:
         }
         data[I + F - 1] = 0;
     }
-
 
 public:
     uint32_t data[I + F];
