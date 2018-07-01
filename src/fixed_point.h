@@ -49,10 +49,26 @@ public:
     }
 
     inline __host__ __device__ double get_double() const {
-        if (I > 1) {
-            return static_cast<const double>(*reinterpret_cast<const int64_t *>(&data[F]));
+        fixed_point<I, F> t(*this);
+        if (t.bit_get((I + F) * 32 - 1) == 1) {
+            t.negate();
         }
-        return static_cast<const double>(*reinterpret_cast<const int32_t *>(&data[F]));
+        double value = 1.0;
+        int64_t integer = t.get_integer();
+        uint64_t fractional = 0;
+        if (F > 1) {
+            fractional = *reinterpret_cast<const uint64_t *>(&data[F - 2]);
+        }
+        else {
+            fractional = *reinterpret_cast<const uint32_t *>(&data[F - 1]);
+        }
+        *reinterpret_cast<uint64_t *>(&value) |= (fractional >> 12);
+        value -= 1.0;
+        value += 1.0 * integer;
+        if (get_integer() < 0) {
+            value *= -1.0;
+        }
+        return value;
     }
 
     inline __host__ __device__ int64_t get_integer() const {
@@ -144,7 +160,7 @@ public:
             fixed_point<I, F> t;
             t.set(integer.at((integer.length() - 1) - i) - '0');
             t.multiply(tens);
-            tens.multiply(10);
+            tens.multiply(10ULL);
             integer_part.add(t);
         }
 

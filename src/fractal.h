@@ -28,13 +28,19 @@ struct kernel_params {
             const T &scale) :
                 image_width_(image_width), image_height_(image_height),
                 escape_block_(escape_block), escape_limit_(escape_limit),
-                image_chunk_(0), escape_block_i_(0), re_(re), im_(im), scale_(scale) {};
+                image_chunk_(0), escape_i_(0), escape_range_min_(0), escape_range_max_(0),
+                re_(re), im_(im), scale_(scale) {};
     uint64_t image_width_;
     uint64_t image_height_;
+    
     uint64_t escape_block_;
     uint64_t escape_limit_;
+    uint64_t escape_i_;
+    uint64_t escape_range_min_;
+    uint64_t escape_range_max_;
+
     uint64_t image_chunk_;
-    uint64_t escape_block_i_;
+
     T re_;
     T im_;
     T scale_;
@@ -45,22 +51,30 @@ struct kernel_params {
 #ifdef _DEBUG
     constexpr uint64_t default_cuda_groups = 64;
     constexpr uint64_t default_cuda_threads = 256;
+    
     constexpr uint64_t default_escape_block = 256;
     constexpr uint64_t default_escape_limit = 256;
+
     constexpr uint64_t default_image_width = 640;
     constexpr uint64_t default_image_height = 480;
+    constexpr uint64_t preview_image_width = 32;
+    constexpr uint64_t preview_image_height = 32;
 #else
-    constexpr uint64_t default_cuda_groups = 512;
-    constexpr uint64_t default_cuda_threads = 1024;
+    constexpr uint64_t default_cuda_groups = 128;
+    constexpr uint64_t default_cuda_threads = 512;
+
     constexpr uint64_t default_escape_block = 16384;
     constexpr uint64_t default_escape_limit = 65536;
+
     constexpr uint64_t default_image_width = 1024;
     constexpr uint64_t default_image_height = 768;
+    constexpr uint64_t preview_image_width = 64;
+    constexpr uint64_t preview_image_height = 64;
 #endif
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<uint32_t I, uint32_t F>
+template<typename T>
 class fractal {
 public:
     fractal() : fractal(default_image_width, default_image_height, default_escape_block, default_escape_limit, default_cuda_groups, default_cuda_threads) {
@@ -73,7 +87,7 @@ public:
     }
 
     fractal(const uint64_t image_width, const uint64_t image_height, uint64_t escape_block, uint64_t escape_limit, uint64_t cuda_groups, uint64_t cuda_threads) :
-            image_(nullptr), block_double_(nullptr), block_fixed_point_(nullptr), block_image_(nullptr),
+            image_(nullptr),
             image_width_(image_width), image_height_(image_height),
             cuda_groups_(cuda_groups), cuda_threads_(cuda_threads),
             escape_block_(escape_block), escape_limit_(escape_limit) {
@@ -101,21 +115,19 @@ public:
     }
 
     void resize(const uint64_t image_width, const uint64_t image_height);
+    void specify(const T &re, const T &im, const T &scale);
 
-    void specify(const double re, const double im, const double scale);
-    void specify(const fixed_point<I, F> &re, const fixed_point<I, F> &im, const fixed_point<I, F> &scale);
+    bool generate();
 
-    bool generate(bool use_fixed_point = false);
-
-    const uint64_t image_width() {
+    uint64_t image_width() {
         return image_width_;
     }
 
-    const uint64_t image_height() {
+    uint64_t image_height() {
         return image_height_;
     }
 
-    const uint64_t image_size() {
+    uint64_t image_size() {
         return image_width_ * image_height_ * sizeof(uint32_t);
     }
 
@@ -128,6 +140,9 @@ public:
     }
 
 private:
+    bool generate(kernel_params<T> &params, kernel_block<T> *block, bool colour);
+
+private:
     uint64_t cuda_groups_;
     uint64_t cuda_threads_;
     uint64_t escape_block_;
@@ -135,17 +150,11 @@ private:
     uint64_t image_width_;
     uint64_t image_height_;
 
-    double re_d_;
-    fixed_point<I, F> re_fp_;
-    double im_d_;
-    fixed_point<I, F> im_fp_;
-    double scale_d_;
-    fixed_point<I, F> scale_fp_;
+    T re_;
+    T im_;
+    T scale_;
 
     uint32_t *image_;
-    kernel_block<double> *block_double_;
-    kernel_block<fixed_point<I, F>> *block_fixed_point_;
-    uint32_t *block_image_;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
