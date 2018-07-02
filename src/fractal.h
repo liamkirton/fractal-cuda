@@ -13,6 +13,7 @@ struct kernel_block {
     uint64_t escape_;
     T re_;
     T im_;
+    T abs_;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -32,7 +33,7 @@ struct kernel_params {
                 re_(re), im_(im), scale_(scale) {};
     uint64_t image_width_;
     uint64_t image_height_;
-    
+
     uint64_t escape_block_;
     uint64_t escape_limit_;
     uint64_t escape_i_;
@@ -60,16 +61,16 @@ struct kernel_params {
     constexpr uint64_t preview_image_width = 32;
     constexpr uint64_t preview_image_height = 32;
 #else
-    constexpr uint64_t default_cuda_groups = 128;
-    constexpr uint64_t default_cuda_threads = 512;
+    constexpr uint64_t default_cuda_groups = 256;
+    constexpr uint64_t default_cuda_threads = 896;
 
     constexpr uint64_t default_escape_block = 16384;
-    constexpr uint64_t default_escape_limit = 65536;
+    constexpr uint64_t default_escape_limit = 16384;// 524288;
 
     constexpr uint64_t default_image_width = 1024;
     constexpr uint64_t default_image_height = 768;
-    constexpr uint64_t preview_image_width = 64;
-    constexpr uint64_t preview_image_height = 64;
+    constexpr uint64_t preview_image_width = default_cuda_threads;
+    constexpr uint64_t preview_image_height = default_cuda_groups;
 #endif
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -109,7 +110,10 @@ public:
     bool initialise(uint64_t cuda_groups, uint64_t cuda_threads);
     void uninitialise();
 
-    void limits(uint64_t escape_block, uint64_t escape_limit) {
+    void limits(uint64_t escape_limit, uint64_t escape_block = default_escape_block) {
+        if (escape_block > escape_limit) {
+            escape_limit = escape_block;
+        }
         escape_block_ = escape_block;
         escape_limit_ = escape_limit;
     }

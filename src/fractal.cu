@@ -15,20 +15,12 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template class fractal<double>;
-//template class fractal<fixed_point<1, 2>>;
-//template class fractal<fixed_point<2, 2>>;
+template class fractal<fixed_point<1, 2>>;
+template class fractal<fixed_point<2, 2>>;
 template class fractal<fixed_point<2, 4>>;
-//template class fractal<fixed_point<2, 6>>;
 template class fractal<fixed_point<2, 8>>;
-//template class fractal<fixed_point<2, 16>>;
-//template class fractal<fixed_point<2, 24>>;
-//template class fractal<fixed_point<2, 32>>;
-template class fractal<fixed_point<4, 4>>;
-//template class fractal<fixed_point<4, 8>>;
-//template class fractal<fixed_point<4, 16>>;
-//template class fractal<fixed_point<4, 32>>;
-//template class fractal<fixed_point<4, 64>>;
-//template class fractal<fixed_point<4, 128>>;
+template class fractal<fixed_point<2, 16>>;
+template class fractal<fixed_point<2, 32>>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -99,7 +91,7 @@ template<>
 void fractal<double>::specify(const double &re, const double &im, const double &scale) {
     re_ = re;
     im_ = im;
-    scale_ = 1.0 / scale;
+    scale_ = scale;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -145,6 +137,10 @@ bool fractal<T>::generate() {
         }
     }
 
+    if (params.escape_range_min_ == params.escape_range_max_) {
+        params.escape_range_max_++;
+    }
+
     std::cout << params.escape_range_min_ << " : " << params.escape_range_max_ << std::endl;
 
     delete[] preview;
@@ -161,10 +157,6 @@ bool fractal<T>::generate() {
 
 template<typename T>
 bool fractal<T>::generate(kernel_params<T> &params, kernel_block<T> *block_device, bool colour) {
-    std::wcout << L"[+] Chunks: "
-        << 1 + params.image_width_ * params.image_height_ / (cuda_groups_ * cuda_threads_)
-        << L" " << std::flush;
-
     uint32_t *block_image_device;
     kernel_params<T> *params_device{ nullptr };
 
@@ -180,13 +172,16 @@ bool fractal<T>::generate(kernel_params<T> &params, kernel_block<T> *block_devic
     cudaError_t cudaError{ cudaSuccess };
 
     for (uint64_t image_chunk = 0; image_chunk < (params.image_width_ * params.image_height_); image_chunk += (cuda_groups_ * cuda_threads_)) {
-        std::wcout << L"+" << std::flush;
-
         uint64_t chunk_size = std::min((params.image_width_ * params.image_height_) - image_chunk, cuda_groups_ * cuda_threads_);
         uint64_t chunk_groups = chunk_size / cuda_threads_;
         cudaMemset(block_device, 0, cuda_groups_ * cuda_threads_ * sizeof(kernel_block<T>));
 
         for (uint32_t i = 0; i < (escape_limit_ / escape_block_); ++i) {
+            if ((i % 10) == 0) {
+                std::wcout << L"\r[+] Chunk: " << image_chunk / (cuda_groups_ * cuda_threads_) << " / "
+                    << 1 + params.image_width_ * params.image_height_ / (cuda_groups_ * cuda_threads_)
+                    << L", Block: " << i * escape_block_ << " / " << escape_limit_ << std::flush;
+            }
             params.image_chunk_ = image_chunk;
             params.escape_i_ = i;
             cudaMemcpy(params_device, &params, sizeof(params), cudaMemcpyHostToDevice);
@@ -241,7 +236,7 @@ __global__ void kernel_mandelbrot(kernel_block<double> *blocks, kernel_params<do
     uint64_t escape = block->escape_;
     double re = block->re_;
     double im = block->im_;
-    double abs = 0.0;
+    double abs = block->abs_;
 
     if (params->escape_i_ == 0) {
         escape = params->escape_limit_;
@@ -265,6 +260,7 @@ __global__ void kernel_mandelbrot(kernel_block<double> *blocks, kernel_params<do
     block->escape_ = escape;
     block->re_ = re;
     block->im_ = im;
+    block->abs_ = abs;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -284,46 +280,51 @@ __global__ void kernel_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kerne
 
     kernel_block<fixed_point<I, F>> *block = &blocks[tid];
     uint64_t escape = block->escape_;
-    fixed_point<I, F> re_z(block->re_);
-    fixed_point<I, F> im_z(block->im_);
+    fixed_point<I, F> re(block->re_);
+    fixed_point<I, F> im(block->im_);
+    fixed_point<I, F> abs(block->abs_);
 
     if (params->escape_i_ == 0) {
         escape = params->escape_limit_;
-        re_z.set(re_c);
-        im_z.set(im_c);
+        re.set(re_c);
+        im.set(im_c);
+        abs.set(0);
     }
 
-    fixed_point<I, F> re_prod(re_z);
-    re_prod.multiply(re_z);
+    fixed_point<I, F> re_prod(re);
+    re_prod.multiply(re);
 
-    fixed_point<I, F> im_prod(im_z);
-    im_prod.multiply(im_z);
+    fixed_point<I, F> im_prod(im);
+    im_prod.multiply(im);
 
     fixed_point<I, F> re_imed;
     fixed_point<I, F> im_imed;
 
     if (escape == params->escape_limit_) {
-        for (uint32_t i = 0; i < params->escape_block_; ++i) {
+        for (uint64_t i = 0; i < params->escape_block_; ++i) {
             re_imed.set(im_prod);
             re_imed.negate();
             re_imed.add(re_prod);
             re_imed.add(re_c);
 
             im_imed.set(2);
-            im_imed.multiply(re_z);
-            im_imed.multiply(im_z);
+            im_imed.multiply(re);
+            im_imed.multiply(im);
             im_imed.add(im_c);
 
-            re_z.set(re_imed);
-            im_z.set(im_imed);
+            re.set(re_imed);
+            im.set(im_imed);
 
-            re_prod.set(re_z);
-            re_prod.multiply(re_z);
+            re_prod.set(re);
+            re_prod.multiply(re);
 
-            im_prod.set(im_z);
-            im_prod.multiply(im_z);
+            im_prod.set(im);
+            im_prod.multiply(im);
 
-            if (static_cast<double>(re_prod) + static_cast<double>(im_prod) > 4.0) {
+            abs.set(re_prod);
+            abs.add(im_prod);
+
+            if (static_cast<double>(abs) > 4.0) {
                 escape = i + params->escape_i_ * params->escape_block_;
                 break;
             }
@@ -331,8 +332,9 @@ __global__ void kernel_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kerne
     }
 
     block->escape_ = escape;
-    block->re_.set(re_z);
-    block->im_.set(im_z);
+    block->re_.set(re);
+    block->im_.set(im);
+    block->abs_.set(abs);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -343,32 +345,33 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
 
     kernel_block<T> *block = &blocks[tid];
     uint64_t escape = block->escape_;
-    if (escape < params->escape_limit_) {
-        escape -= (params->escape_range_min_ - 1);
-    }
-    double re_z = static_cast<double>(block->re_);
-    double im_z = static_cast<double>(block->im_);
-    double abs_z = sqrtf(re_z * re_z + im_z * im_z);
-
-    //double hue = 360.0 * log(1.0 * escape) / log(1.0 * (params->escape_range_max_ - params->escape_range_min_));// +1.0 - (log(log(abs_z)) / log(2.0));
-    double hue = 360.0 * (log(1.0 * escape) - log(log(abs_z))) / (log(1.0 * (params->escape_range_max_ - params->escape_range_min_)) + log(2.0));
-    double sat = 0.85;
-    double val = 1.0;
-
-    hue = fmod(hue, 360.0);
-    hue /= 60;
-
-    double hue_fract = hue - floor(hue);
-    double p = val * (1.0 - sat);
-    double q = val * (1.0 - sat * hue_fract);
-    double t = val * (1.0 - sat * (1.0 - hue_fract));
 
     double r = 0;
     double g = 0;
     double b = 0;
 
     if (escape < params->escape_limit_) {
-        switch ((static_cast<unsigned char>(floor(hue)) + 3) % 6) {
+        escape -= (params->escape_range_min_ - 1);
+
+        double abs = static_cast<double>(block->abs_);
+
+        //double hue = 360.0 * log(1.0 * escape) / log(1.0 * (params->escape_range_max_ - params->escape_range_min_));// +1.0 - (log(log(abs_z)) / log(2.0));
+        //double hue = (360.0 * (log(1.0 * escape) - log(log(abs))) / (log(1.0 * (params->escape_range_max_ - params->escape_range_min_)) + log(2.0)));
+
+        double hue = 360.0 * (log(1.0 * escape) / log(1.0 * (params->escape_range_max_ - params->escape_range_min_)));
+        double sat = 0.95 - log(2.0) + log(log(abs));
+        double val = 0.95;
+
+        hue = fmod(hue, 360.0);
+        hue /= 60;
+
+        double hue_floor = floor(hue);
+        double hue_fract = hue - hue_floor;
+        double p = val * (1.0 - sat);
+        double q = val * (1.0 - sat * hue_fract);
+        double t = val * (1.0 - sat * (1.0 - hue_fract));
+
+        switch (static_cast<unsigned char>(hue_floor) % 6) {
         case 0:
             r = val; g = t; b = p;
             break;

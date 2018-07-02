@@ -49,33 +49,27 @@ public:
     }
 
     inline __host__ __device__ double get_double() const {
-        fixed_point<I, F> t(*this);
-        if (t.bit_get((I + F) * 32 - 1) == 1) {
-            t.negate();
-        }
         double value = 1.0;
-        int64_t integer = t.get_integer();
-        uint64_t fractional = 0;
-        if (F > 1) {
-            fractional = *reinterpret_cast<const uint64_t *>(&data[F - 2]);
+        *reinterpret_cast<uint64_t *>(&value) |= (get_fractional() >> 12);
+        return value + static_cast<double>(get_integer()) - 1.0;
+    }
+
+    inline __host__ __device__ uint64_t get_fractional() const {
+        if (I == 1) {
+            return static_cast<const uint64_t>(*reinterpret_cast<const uint32_t *>(&data[F - 1]));
         }
-        else {
-            fractional = *reinterpret_cast<const uint32_t *>(&data[F - 1]);
-        }
-        *reinterpret_cast<uint64_t *>(&value) |= (fractional >> 12);
-        value -= 1.0;
-        value += 1.0 * integer;
-        if (get_integer() < 0) {
-            value *= -1.0;
-        }
-        return value;
+        return *reinterpret_cast<const uint64_t *>(&data[F - 2]);
     }
 
     inline __host__ __device__ int64_t get_integer() const {
-        if (I > 1) {
-            return *reinterpret_cast<const int64_t *>(&data[F]);
+        if (I == 1) {
+            return static_cast<const int64_t>(*reinterpret_cast<const int32_t *>(&data[F]));
         }
-        return static_cast<const int64_t>(*reinterpret_cast<const int32_t *>(&data[F]));
+        return *reinterpret_cast<const int64_t *>(&data[F]);
+    }
+
+    inline __host__ __device__ bool negative() const {
+        return (data[I + F - 1] & 0x80000000) != 0;
     }
 
     inline __host__ __device__ void set(const fixed_point<I, F> &v) {
