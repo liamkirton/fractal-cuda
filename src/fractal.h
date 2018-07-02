@@ -65,7 +65,7 @@ struct kernel_params {
     constexpr uint64_t default_cuda_threads = 896;
 
     constexpr uint64_t default_escape_block = 16384;
-    constexpr uint64_t default_escape_limit = 16384;// 1048576;
+    constexpr uint64_t default_escape_limit = 1048576;
 
     constexpr uint64_t default_image_width = 1024;
     constexpr uint64_t default_image_height = 768;

@@ -41,6 +41,7 @@ int main() {
     //f.specify(-0.7440, 0.1102, 1.0/200);
     f.specify(-0.13856524454488, -0.64935990748190, 0.00000000045);
     //f.specify(-1.16403856759996471, 0.229637178821327975, 1.0/2.0);
+    f.limits(5000000000);
 
     std::wcout << L"[+] Generating Fractal: " << f.image_width() << L"x" << f.image_height() << " (" << f.image_size() << L" bytes)" << std::endl;
 
