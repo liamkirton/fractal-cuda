@@ -118,6 +118,7 @@ bool fractal<T>::generate() {
         return false;
     }
 
+    std::cout << "[+] Generating Preview" << std::endl;
     if (!generate(params_preview, block_device, false)) {
         return false;
     }
@@ -141,9 +142,11 @@ bool fractal<T>::generate() {
         params.escape_range_max_++;
     }
 
-    std::cout << params.escape_range_min_ << " : " << params.escape_range_max_ << std::endl;
+    std::cout << "[+] Estimated Range: " << params.escape_range_min_ << " => " << params.escape_range_max_ << std::endl;
 
     delete[] preview;
+
+    std::cout << "[+] Generating Image" << std::endl;
 
     if (!generate(params, block_device, true)) {
         return false;
@@ -179,7 +182,7 @@ bool fractal<T>::generate(kernel_params<T> &params, kernel_block<T> *block_devic
         for (uint32_t i = 0; i < (escape_limit_ / escape_block_); ++i) {
             if ((i % 10) == 0) {
                 std::wcout << L"\r[+] Chunk: " << image_chunk / (cuda_groups_ * cuda_threads_) << " / "
-                    << 1 + params.image_width_ * params.image_height_ / (cuda_groups_ * cuda_threads_)
+                    << params.image_width_ * params.image_height_ / (cuda_groups_ * cuda_threads_)
                     << L", Block: " << i * escape_block_ << " / " << escape_limit_ << std::flush;
             }
             params.image_chunk_ = image_chunk;
