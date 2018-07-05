@@ -31,29 +31,58 @@ int main() {
         }, image, image_width, image_height));
     };
 
+    /*uint64_t image_width = 640;
+    uint64_t image_height = 480;*/
+
     uint64_t image_width = 5120;
     uint64_t image_height = 2880;
 
-    fractal<double> f(image_width, image_height);
-    //fractal<fixed_point<2, 4>> f(image_width, image_height);
-    //f.specify(-0.74516, 0.112575, 6.5E-4);
-    //f.specify(-0.4706839696164857, -0.5829393990803547, 1/8.6797568398e+10);
-    //f.specify(-0.7440, 0.1102, 1.0/200);
-    f.specify(-0.13856524454488, -0.64935990748190, 0.00000000045);
-    //f.specify(-1.16403856759996471, 0.229637178821327975, 1.0/2.0);
-    f.limits(5000000000);
+    //fractal<double> f(image_width, image_height);
+    //fractal<double> f(image_width, image_height);
 
-    std::wcout << L"[+] Generating Fractal: " << f.image_width() << L"x" << f.image_height() << " (" << f.image_size() << L" bytes)" << std::endl;
+    //fixed_point<2, 4> re("-1.74995768370609350360221450607069970727110579726252077930242837820286008082972804887218672784431700831100544507655659531379747541999999995");
+    //fixed_point<2, 4> im("0.00000000000000000278793706563379402178294753790944364927085054500163081379043930650189386849765202169477470552201325772332454726999999995");
 
-    QueryPerformanceCounter(&p_t0);
-    if (!f.generate()) {
-        std::wcout << L"[!] Generation Failed." << std::endl;
+    //fixed_point<2, 4> re("0.013438870532012129028364919004019686867528573314565492885548699");
+    //fixed_point<2, 4> im("0.655614218769465062251320027664617466691295975864786403994151735");
+
+    //fixed_point<2, 4> re("0.27533764774673799358866712482462788156671406989542628591627436306743751013023030130967197535665363986058288420463735384997362663584446169657773339617717365950286959762265485804783047336923365261060963100721927003791989610861331863571141065592841226995797739723012374298589823921181693139824190379745910243872940870200527114596661654505");
+    //fixed_point<2, 4> im("0.006759649405327850670181700456194929502189750234614304846357269137106731032582471677573582008294494705826194131450773107049670717146785957633119244225710271178867840504202402362491296317894835321064971518673775630252745135294700216673815790733343134984120108524001799351076577642283751627469315124883962453013093853471898311683555782404");
+
+    //fixed_point<2, 4> re("0.39739358836206895");
+    //fixed_point<2, 4> im("0.1334986193426724");
+
+    fixed_point<2, 4> scale(0.5);
+    fixed_point<2, 4> scale_factor(0.25);
+
+    double scale = 0.5;
+    for (uint32_t i = 0; i < 25; ++i) {
+        scale.multiply(scale_factor);
     }
-    QueryPerformanceCounter(&p_t1);
 
-    std::wcout << "[+] Time: " << (1.0 * (p_t1.QuadPart - p_t0.QuadPart)) / p_freq.QuadPart << std::endl;
+    fractal<fixed_point<2, 4>> f;
+    f.initialise(256, 768);
+    f.limits(1048576);
 
-    png(f.image(true), f.image_width(), f.image_height());
+    fixed_point<2, 4> re("0.39739358836206895");
+    fixed_point<2, 4> im("0.1334986193426724");
+
+    for (uint32_t i = 0; i < 8; ++i) {
+        f.specify(-0.6384490894751227, 0.4388825030223526, scale);
+        scale.multiply(scale_factor);
+
+        std::wcout << L"[+] Generating Fractal: " << f.image_width() << L"x" << f.image_height() << " (" << f.image_size() << L" bytes)" << std::endl;
+
+        QueryPerformanceCounter(&p_t0);
+        if (!f.generate()) {
+            std::wcout << L"[!] Generation Failed." << std::endl;
+        }
+        QueryPerformanceCounter(&p_t1);
+
+        std::wcout << "[+] Time: " << (1.0 * (p_t1.QuadPart - p_t0.QuadPart)) / p_freq.QuadPart << std::endl;
+
+        png(f.image(true), f.image_width(), f.image_height());
+    }
 
     for (auto &t : png_threads) {
         t.join();

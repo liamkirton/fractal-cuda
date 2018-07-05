@@ -40,13 +40,13 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
 
 template<typename T>
 bool fractal<T>::initialise(uint64_t cuda_groups, uint64_t cuda_threads) {
-    if (cuda_groups * cuda_threads < preview_image_width * preview_image_height) {
-        cuda_groups = preview_image_height;
-        cuda_threads = preview_image_width;
-    }
-
     cuda_groups_ = cuda_groups;
     cuda_threads_ = cuda_threads;
+
+    if (preview_image_width_ * preview_image_height_ > cuda_groups_ * cuda_threads_) {
+        preview_image_height_ = cuda_groups;
+        preview_image_width_ = cuda_threads;
+    }
 
     uninitialise();
 
@@ -109,7 +109,7 @@ template<typename T>
 bool fractal<T>::generate() {
     resize(image_width_, image_height_);
 
-    kernel_params<T> params_preview(preview_image_width, preview_image_height, escape_block_, escape_limit_, re_, im_, scale_);
+    kernel_params<T> params_preview(preview_image_width_, preview_image_height_, escape_block_, escape_limit_, re_, im_, scale_);
     kernel_params<T> params(image_width_, image_height_, escape_block_, escape_limit_, re_, im_, scale_);
 
     kernel_block<T> *block_device;
@@ -123,13 +123,13 @@ bool fractal<T>::generate() {
         return false;
     }
 
-    kernel_block<T> *preview = new kernel_block<T>[preview_image_width * preview_image_height];
-    cudaMemcpy(preview, block_device, preview_image_width * preview_image_height * sizeof(kernel_block<T>), cudaMemcpyDeviceToHost);
+    kernel_block<T> *preview = new kernel_block<T>[preview_image_width_ * preview_image_height_];
+    cudaMemcpy(preview, block_device, preview_image_width_ * preview_image_height_ * sizeof(kernel_block<T>), cudaMemcpyDeviceToHost);
 
     params.escape_range_min_ = 0xffffffffffffffff;
     params.escape_range_max_ = 0;
 
-    for (uint32_t i = 0; i < preview_image_width * preview_image_height; ++i) {
+    for (uint32_t i = 0; i < preview_image_width_ * preview_image_height_; ++i) {
         if (preview[i].escape_ < params.escape_range_min_) {
             params.escape_range_min_ = preview[i].escape_;
         }
@@ -201,7 +201,7 @@ bool fractal<T>::generate(kernel_params<T> &params, kernel_block<T> *block_devic
             break;
         }
 
-        if (block_image_device != nullptr) {
+        if (colour) {
             cudaMemset(block_image_device, 0, cuda_groups_ * cuda_threads_ * sizeof(uint32_t));
             kernel_colour<T> <<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device, params_device, block_image_device);
 
@@ -232,8 +232,8 @@ __global__ void kernel_mandelbrot(kernel_block<double> *blocks, kernel_params<do
     const int pixel_x = (params->image_chunk_ + tid) % params->image_width_;
     const int pixel_y = (params->image_chunk_ + tid) / params->image_width_;
 
-    const double re_c = params->re_ + (-2.0 + pixel_x * 3.0 / params->image_width_) * params->scale_;
-    const double im_c = params->im_ + (1.0 - pixel_y * 2.0 / params->image_height_) * params->scale_;
+    const double re_c = params->re_ + (re_min + pixel_x * (re_max - re_min) / params->image_width_) * params->scale_;
+    const double im_c = params->im_ + (im_max - pixel_y * (im_max - im_min) / params->image_height_) * params->scale_;
 
     kernel_block<double> *block = &blocks[tid];
     uint64_t escape = block->escape_;
@@ -274,8 +274,8 @@ __global__ void kernel_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kerne
     const int pixel_x = (params->image_chunk_ + tid) % params->image_width_;
     const int pixel_y = (params->image_chunk_ + tid) / params->image_width_;
 
-    fixed_point<I, F> re_c(-2.0 + pixel_x * 3.0 / params->image_width_);
-    fixed_point<I, F> im_c(1.0 - pixel_y * 2.0 / params->image_height_);
+    fixed_point<I, F> re_c(re_min + pixel_x * (re_max - re_min) / params->image_width_);
+    fixed_point<I, F> im_c(im_max - pixel_y * (im_max - im_min) / params->image_height_);
     re_c.multiply(params->scale_);
     im_c.multiply(params->scale_);
     re_c.add(params->re_);
@@ -361,12 +361,13 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
         //double hue = 360.0 * log(1.0 * escape) / log(1.0 * (params->escape_range_max_ - params->escape_range_min_));// +1.0 - (log(log(abs_z)) / log(2.0));
         //double hue = (360.0 * (log(1.0 * escape) - log(log(abs))) / (log(1.0 * (params->escape_range_max_ - params->escape_range_min_)) + log(2.0)));
 
-        double hue = 360.0 * (log(1.0 * escape) / log(1.0 * (params->escape_range_max_ - params->escape_range_min_)));
+        //double hue = 360.0 * (log(1.0 * escape) / log(1.0 * (params->escape_range_max_ - params->escape_range_min_)));
+        double hue = 360.0 * log(1.0 * (params->escape_range_max_ - params->escape_range_min_)) / log(1.0 * escape);
         double sat = 0.95 - log(2.0) + log(log(abs));
         double val = 0.95;
 
         hue = fmod(hue, 360.0);
-        hue /= 60;
+        hue /= 60.0;
 
         double hue_floor = floor(hue);
         double hue_fract = hue - hue_floor;

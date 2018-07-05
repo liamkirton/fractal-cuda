@@ -49,6 +49,17 @@ struct kernel_params {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+//constexpr double im_min = 1.525;
+//constexpr double im_max = -1.525;
+//constexpr double re_min = (im_max - im_min);
+//constexpr double re_max = -(im_max - im_min) / 2.0;
+
+constexpr double static_scale = 1.5;
+constexpr double im_min = 1.0 * static_scale;
+constexpr double im_max = -1.0 * static_scale;
+constexpr double re_min = -2.0 * static_scale;
+constexpr double re_max = 1.0 * static_scale;
+
 #ifdef _DEBUG
     constexpr uint64_t default_cuda_groups = 64;
     constexpr uint64_t default_cuda_threads = 256;
@@ -69,8 +80,8 @@ struct kernel_params {
 
     constexpr uint64_t default_image_width = 1024;
     constexpr uint64_t default_image_height = 768;
-    constexpr uint64_t preview_image_width = default_cuda_threads;
-    constexpr uint64_t preview_image_height = default_cuda_groups;
+    constexpr uint64_t default_preview_image_width = default_cuda_threads;
+    constexpr uint64_t default_preview_image_height = default_cuda_groups;
 #endif
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -90,6 +101,7 @@ public:
     fractal(const uint64_t image_width, const uint64_t image_height, uint64_t escape_block, uint64_t escape_limit, uint64_t cuda_groups, uint64_t cuda_threads) :
             image_(nullptr),
             image_width_(image_width), image_height_(image_height),
+            preview_image_width_(default_preview_image_width), preview_image_height_(default_preview_image_height),
             cuda_groups_(cuda_groups), cuda_threads_(cuda_threads),
             escape_block_(escape_block), escape_limit_(escape_limit) {
         initialise();
@@ -112,7 +124,7 @@ public:
 
     void limits(uint64_t escape_limit, uint64_t escape_block = default_escape_block) {
         if (escape_block > escape_limit) {
-            escape_limit = escape_block;
+            escape_block = escape_limit;
         }
         escape_block_ = escape_block;
         escape_limit_ = escape_limit;
@@ -151,8 +163,11 @@ private:
     uint64_t cuda_threads_;
     uint64_t escape_block_;
     uint64_t escape_limit_;
+
     uint64_t image_width_;
     uint64_t image_height_;
+    uint64_t preview_image_width_;
+    uint64_t preview_image_height_;
 
     T re_;
     T im_;
