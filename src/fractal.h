@@ -155,6 +155,32 @@ public:
         return image_buffer;
     }
 
+    double re() {
+        return re(image_width_ / 2);
+    }
+
+    double re(uint64_t x) {
+        if (x > image_width_) {
+            x = 0;
+        }
+        return static_cast<double>(re_) + (re_min + x * (re_max - re_min) / image_width_) * static_cast<double>(scale_);
+    }
+
+    double im() {
+        return im(image_height_ / 2);
+    }
+
+    double im(uint64_t y) {
+        if (y > image_height_) {
+            y = 0;
+        }
+        return static_cast<double>(im_) + (im_max - y * (im_max - im_min) / image_height_) * static_cast<double>(scale_);
+    }
+
+    double scale() {
+        return static_cast<double>(scale_);
+    }
+
 private:
     bool generate(kernel_params<T> &params, kernel_block<T> *block, bool colour);
 
