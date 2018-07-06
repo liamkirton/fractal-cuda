@@ -29,7 +29,7 @@ struct kernel_params {
             const T &scale) :
                 image_width_(image_width), image_height_(image_height),
                 escape_block_(escape_block), escape_limit_(escape_limit),
-                image_chunk_(0), escape_i_(0), escape_range_min_(0), escape_range_max_(0),
+                image_chunk_(0), escape_i_(0), escape_range_min_(0), escape_range_max_(escape_limit),
                 re_(re), im_(im), scale_(scale) {};
     uint64_t image_width_;
     uint64_t image_height_;
@@ -49,11 +49,6 @@ struct kernel_params {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-//constexpr double im_min = 1.525;
-//constexpr double im_max = -1.525;
-//constexpr double re_min = (im_max - im_min);
-//constexpr double re_max = -(im_max - im_min) / 2.0;
-
 constexpr double static_scale = 1.5;
 constexpr double im_min = 1.0 * static_scale;
 constexpr double im_max = -1.0 * static_scale;
@@ -69,8 +64,8 @@ constexpr double re_max = 1.0 * static_scale;
 
     constexpr uint64_t default_image_width = 640;
     constexpr uint64_t default_image_height = 480;
-    constexpr uint64_t preview_image_width = 32;
-    constexpr uint64_t preview_image_height = 32;
+    constexpr uint64_t trial_image_width = 32;
+    constexpr uint64_t trial_image_height = 32;
 #else
     constexpr uint64_t default_cuda_groups = 256;
     constexpr uint64_t default_cuda_threads = 896;
@@ -80,8 +75,8 @@ constexpr double re_max = 1.0 * static_scale;
 
     constexpr uint64_t default_image_width = 1024;
     constexpr uint64_t default_image_height = 768;
-    constexpr uint64_t default_preview_image_width = default_cuda_threads;
-    constexpr uint64_t default_preview_image_height = default_cuda_groups;
+    constexpr uint64_t default_trial_image_width = default_cuda_threads;
+    constexpr uint64_t default_trial_image_height = default_cuda_groups;
 #endif
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -101,7 +96,7 @@ public:
     fractal(const uint64_t image_width, const uint64_t image_height, uint64_t escape_block, uint64_t escape_limit, uint64_t cuda_groups, uint64_t cuda_threads) :
             image_(nullptr),
             image_width_(image_width), image_height_(image_height),
-            preview_image_width_(default_preview_image_width), preview_image_height_(default_preview_image_height),
+            trial_image_width_(default_trial_image_width), trial_image_height_(default_trial_image_height),
             cuda_groups_(cuda_groups), cuda_threads_(cuda_threads),
             escape_block_(escape_block), escape_limit_(escape_limit) {
         initialise();
@@ -133,7 +128,7 @@ public:
     void resize(const uint64_t image_width, const uint64_t image_height);
     void specify(const T &re, const T &im, const T &scale);
 
-    bool generate();
+    bool generate(bool trial = true);
 
     uint64_t image_width() {
         return image_width_;
@@ -182,7 +177,7 @@ public:
     }
 
 private:
-    bool generate(kernel_params<T> &params, kernel_block<T> *block, bool colour);
+    bool generate(kernel_params<T> &params, bool colour);
 
 private:
     uint64_t cuda_groups_;
@@ -192,14 +187,16 @@ private:
 
     uint64_t image_width_;
     uint64_t image_height_;
-    uint64_t preview_image_width_;
-    uint64_t preview_image_height_;
+    uint64_t trial_image_width_;
+    uint64_t trial_image_height_;
 
     T re_;
     T im_;
     T scale_;
 
     uint32_t *image_;
+    kernel_block<T> *block_device_;
+    uint32_t *block_device_image_;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

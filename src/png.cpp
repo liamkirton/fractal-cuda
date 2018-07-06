@@ -1,3 +1,5 @@
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 #include <windows.h>
 
 #include <chrono>
@@ -7,7 +9,10 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <mutex>
+#include <queue>
 #include <sstream>
+#include <tuple>
 #include <vector>
 
 #include "cuda_runtime.h"
@@ -16,24 +21,78 @@
 #include <png.h>
 
 #include "fractal.h"
+#include "png.h"
 
-int write_png(const uint32_t *image, uint64_t image_width, uint64_t image_height, std::string &name) {
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+extern HANDLE g_ExitEvent;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+png::png(std::string directory) : directory_(directory) {
+    for (uint32_t i = 0; i < 4; ++i) {
+        threads_.push_back(std::thread([this]() {
+            while (true) {
+                if (WaitForSingleObject(g_ExitEvent, 1000) == WAIT_OBJECT_0) {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    if (queue_.empty()) {
+                        break;
+                    }
+                }
+                std::tuple<uint64_t, uint64_t, const uint32_t *, std::string> image{ 0, 0, nullptr, "" };
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    if (queue_.empty()) {
+                        continue;
+                    }
+                    image = queue_.front();
+                    queue_.pop();
+                }
+                write(image);
+                delete[] std::get<2>(image);
+            }
+        }));
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+png::~png() {
+    for (auto &t : threads_) {
+        t.join();
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void png::write(std::tuple<uint64_t, uint64_t, const uint32_t *, std::string> &image) {
+    uint64_t image_width = std::get<0>(image);
+    uint64_t image_height = std::get<1>(image);
+    const uint32_t *image_buffer = std::get<2>(image);
+    std::string suffix = std::get<3>(image);
+
     png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
     png_infop info_ptr = png_create_info_struct(png_ptr);
 
     if (setjmp(png_jmpbuf(png_ptr))) {
-        std::wcout << L"ERROR: libpng" << std::endl << std::endl;
-        return -1;
+        std::cout << L"[!] ERROR: png::write(): libpng Exception" << std::endl;
+        return;
     }
 
-    auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    tm tm_now{ 0 }; 
+    __time64_t time_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    _localtime64_s(&tm_now, &time_now);
 
-    std::stringstream fn; 
-    fn << std::put_time(std::localtime(&now), "out\\%Y%m%d-%H%M%S ") << name << ".png";
+    std::stringstream fn;
+    fn << directory_ << "\\" << std::put_time(&tm_now, "%Y%m%d-%H%M%S") << " " << suffix << ".png";
 
-    FILE *fp = fopen(fn.str().c_str(), "wb");
+    FILE *file{ nullptr };
+    if (fopen_s(&file, fn.str().c_str(), "wb") != 0) {
+        std::cout << L"[!] ERROR: png::write(): fopen_s Failed" << std::endl;
+        return;
+    }
 
-    png_init_io(png_ptr, fp);
+    png_init_io(png_ptr, file);
     png_set_IHDR(png_ptr,
         info_ptr,
         static_cast<png_uint_32>(image_width),
@@ -46,18 +105,22 @@ int write_png(const uint32_t *image, uint64_t image_width, uint64_t image_height
 
     png_write_info(png_ptr, info_ptr);
 
-    auto row = new uint32_t[image_width];
-    std::memset(row, 0, sizeof(uint32_t) * image_width);
+    uint32_t *row_buffer = new uint32_t[image_width];
+    if (row_buffer == nullptr) {
+        return;
+    }
+    std::memset(row_buffer, 0, image_width * sizeof(uint32_t));
 
     for (uint64_t y = 0; y < image_height; y++) {
         for (uint64_t x = 0; x < image_width; x++) {
-            row[x] = image[x + y * image_width];
+            row_buffer[x] = image_buffer[x + y * image_width];
         }
-        png_write_row(png_ptr, reinterpret_cast<png_const_bytep>(row));
+        png_write_row(png_ptr, reinterpret_cast<png_const_bytep>(row_buffer));
     }
 
+    delete[] row_buffer;
     png_write_end(png_ptr, NULL);
-    fclose(fp);
-
-    return 0;
+    fclose(file);
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

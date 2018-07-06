@@ -15,11 +15,13 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template class fractal<double>;
+template class fractal<fixed_point<1, 1>>; 
 template class fractal<fixed_point<1, 2>>;
 template class fractal<fixed_point<2, 2>>;
 template class fractal<fixed_point<2, 4>>;
 template class fractal<fixed_point<2, 8>>;
 template class fractal<fixed_point<2, 16>>;
+template class fractal<fixed_point<2, 24>>; 
 template class fractal<fixed_point<2, 32>>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,9 +45,9 @@ bool fractal<T>::initialise(uint64_t cuda_groups, uint64_t cuda_threads) {
     cuda_groups_ = cuda_groups;
     cuda_threads_ = cuda_threads;
 
-    if (preview_image_width_ * preview_image_height_ > cuda_groups_ * cuda_threads_) {
-        preview_image_height_ = cuda_groups;
-        preview_image_width_ = cuda_threads;
+    if (trial_image_width_ * trial_image_height_ > cuda_groups_ * cuda_threads_) {
+        trial_image_height_ = cuda_groups;
+        trial_image_width_ = cuda_threads;
     }
 
     uninitialise();
@@ -53,6 +55,16 @@ bool fractal<T>::initialise(uint64_t cuda_groups, uint64_t cuda_threads) {
     cudaError_t cuda_status;
     if ((cuda_status = cudaSetDevice(0)) != cudaSuccess) {
         std::wcout << L"ERROR: cudaSetDevice() Failed. [" << cuda_status << L"]" << std::endl << std::endl;
+        return false;
+    }
+
+    cudaMalloc(&block_device_, cuda_groups_ * cuda_threads_ * sizeof(kernel_block<T>));
+    if (block_device_ == nullptr) {
+        return false;
+    }
+
+    cudaMalloc(&block_device_image_, cuda_groups_ * cuda_threads_ * sizeof(uint32_t));
+    if (block_device_image_ == nullptr) {
         return false;
     }
 
@@ -64,6 +76,13 @@ bool fractal<T>::initialise(uint64_t cuda_groups, uint64_t cuda_threads) {
 
 template<typename T>
 void fractal<T>::uninitialise() {
+    if (block_device_ != nullptr) {
+        cudaFree(block_device_);
+        block_device_ = nullptr;
+    }
+    if (block_device_image_ != nullptr) {
+        block_device_image_ = nullptr;
+    }
     cudaDeviceReset();
 }
 
@@ -106,67 +125,61 @@ void fractal<T>::specify(const T &re, const T &im, const T &scale) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-bool fractal<T>::generate() {
+bool fractal<T>::generate(bool trial) {
     resize(image_width_, image_height_);
 
-    kernel_params<T> params_preview(preview_image_width_, preview_image_height_, escape_block_, escape_limit_, re_, im_, scale_);
+    kernel_params<T> params_trial(trial_image_width_, trial_image_height_, escape_block_, escape_limit_, re_, im_, scale_);
     kernel_params<T> params(image_width_, image_height_, escape_block_, escape_limit_, re_, im_, scale_);
 
-    kernel_block<T> *block_device;
-    cudaMalloc(&block_device, cuda_groups_ * cuda_threads_ * sizeof(kernel_block<T>));
-    if (block_device == nullptr) {
+    if ((block_device_ == nullptr) || (block_device_image_ == nullptr)) {
         return false;
     }
 
-    std::cout << "[+] Generating Preview" << std::endl;
-    if (!generate(params_preview, block_device, false)) {
-        return false;
-    }
-
-    kernel_block<T> *preview = new kernel_block<T>[preview_image_width_ * preview_image_height_];
-    cudaMemcpy(preview, block_device, preview_image_width_ * preview_image_height_ * sizeof(kernel_block<T>), cudaMemcpyDeviceToHost);
-
-    params.escape_range_min_ = 0xffffffffffffffff;
-    params.escape_range_max_ = 0;
-
-    for (uint32_t i = 0; i < preview_image_width_ * preview_image_height_; ++i) {
-        if (preview[i].escape_ < params.escape_range_min_) {
-            params.escape_range_min_ = preview[i].escape_;
+    if (trial) {
+        std::cout << "  [+] Trial " << trial_image_width_ << "x" << trial_image_height_ << std::endl;
+        if (!generate(params_trial, false)) {
+            return false;
         }
-        if (preview[i].escape_ > params.escape_range_max_) {
-            params.escape_range_max_ = preview[i].escape_;
+
+        kernel_block<T> *preview = new kernel_block<T>[trial_image_width_ * trial_image_height_];
+        cudaMemcpy(preview, block_device_, trial_image_width_ * trial_image_height_ * sizeof(kernel_block<T>), cudaMemcpyDeviceToHost);
+
+        params.escape_range_min_ = 0xffffffffffffffff;
+        params.escape_range_max_ = 0;
+
+        for (uint32_t i = 0; i < trial_image_width_ * trial_image_height_; ++i) {
+            if (preview[i].escape_ < params.escape_range_min_) {
+                params.escape_range_min_ = preview[i].escape_;
+            }
+            if (preview[i].escape_ > params.escape_range_max_) {
+                params.escape_range_max_ = preview[i].escape_;
+            }
         }
+
+        if (params.escape_range_min_ == params.escape_range_max_) {
+            params.escape_range_max_++;
+        }
+
+        std::cout << "    [+] Range: " << params.escape_range_min_ << " => " << params.escape_range_max_ << std::endl;
+
+        delete[] preview;
     }
 
-    if (params.escape_range_min_ == params.escape_range_max_) {
-        params.escape_range_max_++;
-    }
+    std::cout << "  [+] Full Image: " << image_width_ << "x" << image_height_ << " (" << image_size() << " bytes)" << std::endl;
 
-    std::cout << "[+] Estimated Range: " << params.escape_range_min_ << " => " << params.escape_range_max_ << std::endl;
-
-    delete[] preview;
-
-    std::cout << "[+] Generating Image" << std::endl;
-
-    if (!generate(params, block_device, true)) {
+    if (!generate(params, true)) {
         return false;
     }
 
-    cudaFree(block_device);
     return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-bool fractal<T>::generate(kernel_params<T> &params, kernel_block<T> *block_device, bool colour) {
-    uint32_t *block_image_device;
+bool fractal<T>::generate(kernel_params<T> &params, bool colour) {
     kernel_params<T> *params_device{ nullptr };
 
-    cudaMalloc(&block_image_device, cuda_groups_ * cuda_threads_ * sizeof(uint32_t)); 
-    if (block_image_device == nullptr) {
-        return false;
-    }
     cudaMalloc(&params_device, sizeof(kernel_params<T>));
     if (params_device == nullptr) {
         return false;
@@ -177,22 +190,22 @@ bool fractal<T>::generate(kernel_params<T> &params, kernel_block<T> *block_devic
     for (uint64_t image_chunk = 0; image_chunk < (params.image_width_ * params.image_height_); image_chunk += (cuda_groups_ * cuda_threads_)) {
         uint64_t chunk_size = std::min((params.image_width_ * params.image_height_) - image_chunk, cuda_groups_ * cuda_threads_);
         uint64_t chunk_groups = chunk_size / cuda_threads_;
-        cudaMemset(block_device, 0, cuda_groups_ * cuda_threads_ * sizeof(kernel_block<T>));
+        cudaMemset(block_device_, 0, cuda_groups_ * cuda_threads_ * sizeof(kernel_block<T>));
 
         for (uint32_t i = 0; i < (escape_limit_ / escape_block_); ++i) {
             if ((i % 10) == 0) {
-                std::wcout << L"\r[+] Chunk: " << image_chunk / (cuda_groups_ * cuda_threads_) << " / "
+                std::cout << "\r    [+] Chunk: " << image_chunk / (cuda_groups_ * cuda_threads_) << " / "
                     << params.image_width_ * params.image_height_ / (cuda_groups_ * cuda_threads_)
-                    << L", Block: " << i * escape_block_ << " / " << escape_limit_ << std::flush;
+                    << ", Block: " << i * escape_block_ << " / " << escape_limit_ << "           " << std::flush;
             }
             params.image_chunk_ = image_chunk;
             params.escape_i_ = i;
             cudaMemcpy(params_device, &params, sizeof(params), cudaMemcpyHostToDevice);
 
-            kernel_mandelbrot<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device, params_device);
+            kernel_mandelbrot<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device_, params_device);
 
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
-                std::wcout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError << std::endl;
+                std::cout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError << std::endl;
                 break;
             }
         }
@@ -202,22 +215,21 @@ bool fractal<T>::generate(kernel_params<T> &params, kernel_block<T> *block_devic
         }
 
         if (colour) {
-            cudaMemset(block_image_device, 0, cuda_groups_ * cuda_threads_ * sizeof(uint32_t));
-            kernel_colour<T> <<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device, params_device, block_image_device);
+            cudaMemset(block_device_image_, 0, cuda_groups_ * cuda_threads_ * sizeof(uint32_t));
+            kernel_colour<T> <<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device_, params_device, block_device_image_);
 
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
-                std::wcout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError << std::endl;
+                std::cout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError << std::endl;
                 break;
             }
 
-            cudaMemcpy(&image_[image_chunk], block_image_device, chunk_groups * cuda_threads_ * sizeof(uint32_t), cudaMemcpyDeviceToHost);
+            cudaMemcpy(&image_[image_chunk], block_device_image_, chunk_groups * cuda_threads_ * sizeof(uint32_t), cudaMemcpyDeviceToHost);
         }
     }
 
-    cudaFree(block_image_device);
     cudaFree(params_device);
 
-    std::wcout << std::endl;
+    std::cout << std::endl;
     return true;
 }
 

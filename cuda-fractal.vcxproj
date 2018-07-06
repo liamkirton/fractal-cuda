@@ -25,6 +25,7 @@
     <ClInclude Include="src\fixed_point.h" />
     <ClInclude Include="src\fractal.h" />
     <ClInclude Include="src\png.h" />
+    <ClInclude Include="src\timer.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
