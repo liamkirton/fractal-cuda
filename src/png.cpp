@@ -30,6 +30,11 @@ extern HANDLE g_ExitEvent;
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 png::png(std::string directory) : directory_(directory) {
+    DWORD directory_attributes = GetFileAttributes(directory.c_str());
+    if ((directory_attributes == INVALID_FILE_ATTRIBUTES) || !(directory_attributes & FILE_ATTRIBUTE_DIRECTORY)) {
+        CreateDirectory(directory_.c_str(), nullptr);
+    }
+
     for (uint32_t i = 0; i < 4; ++i) {
         threads_.push_back(std::thread([this]() {
             while (true) {

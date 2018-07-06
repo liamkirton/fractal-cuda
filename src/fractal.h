@@ -24,12 +24,14 @@ struct kernel_params {
             const uint64_t &image_height,
             const uint64_t &escape_block,
             const uint64_t &escape_limit,
+            const uint8_t &colour_method,
             const T &re,
             const T &im,
             const T &scale) :
                 image_width_(image_width), image_height_(image_height),
-                escape_block_(escape_block), escape_limit_(escape_limit),
-                image_chunk_(0), escape_i_(0), escape_range_min_(0), escape_range_max_(escape_limit),
+                escape_block_(escape_block), escape_limit_(escape_limit), colour_method_(colour_method),
+                escape_i_(0), escape_range_min_(0), escape_range_max_(escape_limit),
+                image_chunk_(0),
                 re_(re), im_(im), scale_(scale) {};
     uint64_t image_width_;
     uint64_t image_height_;
@@ -40,6 +42,7 @@ struct kernel_params {
     uint64_t escape_range_min_;
     uint64_t escape_range_max_;
 
+    uint8_t colour_method_;
     uint64_t image_chunk_;
 
     T re_;
@@ -98,7 +101,8 @@ public:
             image_width_(image_width), image_height_(image_height),
             trial_image_width_(default_trial_image_width), trial_image_height_(default_trial_image_height),
             cuda_groups_(cuda_groups), cuda_threads_(cuda_threads),
-            escape_block_(escape_block), escape_limit_(escape_limit) {
+            escape_block_(escape_block), escape_limit_(escape_limit),
+            colour_method_(0) {
         initialise();
         specify(0.0, 0.0, 1.0);
     }
@@ -123,6 +127,10 @@ public:
         }
         escape_block_ = escape_block;
         escape_limit_ = escape_limit;
+    }
+
+    void colour(const uint8_t method) {
+        colour_method_ = method;
     }
 
     void resize(const uint64_t image_width, const uint64_t image_height);
@@ -189,6 +197,7 @@ private:
     uint64_t image_height_;
     uint64_t trial_image_width_;
     uint64_t trial_image_height_;
+    uint8_t colour_method_;
 
     T re_;
     T im_;

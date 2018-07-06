@@ -24,17 +24,21 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct run_params {
-    uint64_t image_width = default_image_width;
-    uint64_t image_height = default_image_height;
     uint64_t I = 0;
     uint64_t F = 0;
+
+    uint64_t image_width = default_image_width;
+    uint64_t image_height = default_image_height;
 
     std::string re = "0.0";
     std::string im = "0.0";
     std::string scale = "1.0";
     std::string scale_factor = "0.5";
+
     uint64_t count = 1;
     uint64_t skip = 0;
+
+    uint8_t colour_method = 0; 
     uint64_t escape_limit = default_escape_limit;
 };
 
@@ -60,7 +64,7 @@ int main(int argc, char *argv[]) {
             << std::endl
             << "Usage: cuda-fractal.exe -r|-re <re> -i|-im <im>" << std::endl
             << "                        -s|-scale <scale> -sf|-scale-factor <scale-factor>" << std::endl
-            << "                        -c|-count <count> -el|-escape-limit <escape-limit>" << std::endl
+            << "                        -c|-count <count> -el|-escape-limit <escape-limit> -cm|-colour-method <colour-method>" << std::endl
             << "                        -fp|-fixed-point I/F" << std::endl
             << "                        -w|-width <width> -h|-height <height>" << std::endl
             << "                        -q|-quick -d|-detailed" << std::endl
@@ -93,12 +97,16 @@ int main(int argc, char *argv[]) {
             params.scale_factor = param;
             ++i;
         }
+        else if ((arg == "-c") || (arg == "-count")) {
+            params.count = std::atoll(param.c_str());
+            ++i;
+        }
         else if ((arg == "-el") || (arg == "-escape-limit")) {
             params.escape_limit = std::atoll(param.c_str());
             ++i;
         }
-        else if ((arg == "-c") || (arg == "-count")) {
-            params.count = std::atoll(param.c_str());
+        else if ((arg == "-cm") || (arg == "-colour-method")) {
+            params.colour_method = static_cast<uint8_t>(std::atoi(param.c_str()));
             ++i;
         }
         else if (arg == "-skip") {
@@ -183,6 +191,7 @@ int main(int argc, char *argv[]) {
 template<>
 void run<0, 0>(png &png_writer, run_params &params) {
     fractal<double> f(params.image_width, params.image_height);
+    f.colour(params.colour_method);
     f.limits(params.escape_limit);
 
     double re = std::stod(params.re);
@@ -213,6 +222,7 @@ void run<0, 0>(png &png_writer, run_params &params) {
 template<uint32_t I, uint32_t F>
 void run(png &png_writer, run_params &params) {
     fractal<fixed_point<I, F>> f(params.image_width, params.image_height);
+    f.colour(params.colour_method);
     f.limits(params.escape_limit); 
 
     fixed_point<I, F> re(params.re);

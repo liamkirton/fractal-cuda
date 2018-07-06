@@ -1,0 +1,11 @@
+.vs
+**/bin/**/Debug
+**/obj/
+*.ilk
+*.iobj
+*.ipdb
+vc*.pdb
+*.VC.db
+*.VC.opendb
+*.vcxproj.user
+*.png

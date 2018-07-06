@@ -128,8 +128,8 @@ template<typename T>
 bool fractal<T>::generate(bool trial) {
     resize(image_width_, image_height_);
 
-    kernel_params<T> params_trial(trial_image_width_, trial_image_height_, escape_block_, escape_limit_, re_, im_, scale_);
-    kernel_params<T> params(image_width_, image_height_, escape_block_, escape_limit_, re_, im_, scale_);
+    kernel_params<T> params_trial(trial_image_width_, trial_image_height_, escape_block_, escape_limit_, 0, re_, im_, scale_);
+    kernel_params<T> params(image_width_, image_height_, escape_block_, escape_limit_, colour_method_, re_, im_, scale_);
 
     if ((block_device_ == nullptr) || (block_device_image_ == nullptr)) {
         return false;
@@ -361,22 +361,48 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
     kernel_block<T> *block = &blocks[tid];
     uint64_t escape = block->escape_;
 
-    double r = 0;
-    double g = 0;
-    double b = 0;
+    double r = 0.0;
+    double g = 0.0;
+    double b = 0.0;
 
     if (escape < params->escape_limit_) {
-        escape -= (params->escape_range_min_ - 1);
-
         double abs = static_cast<double>(block->abs_);
 
-        //double hue = 360.0 * log(1.0 * escape) / log(1.0 * (params->escape_range_max_ - params->escape_range_min_));// +1.0 - (log(log(abs_z)) / log(2.0));
-        //double hue = (360.0 * (log(1.0 * escape) - log(log(abs))) / (log(1.0 * (params->escape_range_max_ - params->escape_range_min_)) + log(2.0)));
-
-        //double hue = 360.0 * (log(1.0 * escape) / log(1.0 * (params->escape_range_max_ - params->escape_range_min_)));
-        double hue = 360.0 * log(1.0 * (params->escape_range_max_ - params->escape_range_min_)) / log(1.0 * escape);
-        double sat = 0.95 - log(2.0) + log(log(abs));
+        double hue = 0.0;
+        double sat = 0.95;
         double val = 0.95;
+
+        switch (params->colour_method_) {
+        default:
+        case 0:
+            hue = 0.0;
+            sat = 0.0;
+            break;
+        case 1:
+            hue = (escape + 1) - log(log(abs)) / log(2.0);
+            break;
+        case 2:
+            hue = 360.0 * (escape + 1) / params->escape_range_max_ - log(log(abs)) / log(2.0);
+            break;
+        case 3:
+            escape -= (params->escape_range_min_ - 1);
+            hue = 360.0 * log(1.0 * escape) / log(1.0 * (params->escape_range_max_ - params->escape_range_min_));
+            break;
+        case 4:
+            escape -= (params->escape_range_min_ - 1);
+            hue = 360.0 * log(1.0 * escape) / log(1.0 * (params->escape_range_max_ - params->escape_range_min_));
+            sat += -log(2.0) + log(log(abs));
+            break;
+        case 5:
+            escape -= (params->escape_range_min_ - 1);
+            hue = 360.0 * log(1.0 * (params->escape_range_max_ - params->escape_range_min_)) / log(1.0 * escape);
+            break;
+        case 6:
+            escape -= (params->escape_range_min_ - 1);
+            hue = 360.0 * log(1.0 * (params->escape_range_max_ - params->escape_range_min_)) / log(1.0 * escape);
+            sat += -log(2.0) + log(log(abs));
+            break;
+        }
 
         hue = fmod(hue, 360.0);
         hue /= 60.0;
