@@ -35,6 +35,25 @@ template<typename T>
 __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params, uint32_t *block_image);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+const __device__ __constant__ double palette[][3] {
+    { 210.0 / 360.0, 0.0, 0.25 },
+    { 210.0 / 360.0, 0.4, 0.75 },
+    { 210.0 / 360.0, 0.0, 0.25 },
+    { 50.0 / 360.0, 0.0, 0.25 },
+    { 50.0 / 360.0, 0.4, 0.75 },
+    { 50.0 / 360.0, 0.0, 0.25 },
+    //{ 0.54, 0.40, 1.0 },
+    //{ 0.45, 0.50, 1.0 },
+    //{ 0.44, 0.70, 1.0 },
+    //{ 0.55, 0.60, 1.0 },
+    //{ 0.7, 0.50, 1.0 },
+    //{ 0.6, 0.40, 1.0 },
+};
+
+constexpr uint32_t palette_count = sizeof(palette) / sizeof(palette[0]);
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Host Methods
 //
@@ -367,6 +386,7 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
 
     if (escape < params->escape_limit_) {
         double abs = static_cast<double>(block->abs_);
+        uint64_t escape_range = params->escape_range_max_ - params->escape_range_min_;
 
         double hue = 0.0;
         double sat = 0.95;
@@ -386,21 +406,32 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
             break;
         case 3:
             escape -= (params->escape_range_min_ - 1);
-            hue = 360.0 * log(1.0 * escape) / log(1.0 * (params->escape_range_max_ - params->escape_range_min_));
+            hue = 360.0 * log(1.0 * escape) / log(1.0 * escape_range);
             break;
         case 4:
             escape -= (params->escape_range_min_ - 1);
-            hue = 360.0 * log(1.0 * escape) / log(1.0 * (params->escape_range_max_ - params->escape_range_min_));
+            hue = 360.0 * log(1.0 * escape) / log(1.0 * escape_range);
             sat += -log(2.0) + log(log(abs));
             break;
         case 5:
             escape -= (params->escape_range_min_ - 1);
-            hue = 360.0 * log(1.0 * (params->escape_range_max_ - params->escape_range_min_)) / log(1.0 * escape);
+            hue = 360.0 * log(1.0 * escape_range) / log(1.0 * escape);
             break;
         case 6:
             escape -= (params->escape_range_min_ - 1);
-            hue = 360.0 * log(1.0 * (params->escape_range_max_ - params->escape_range_min_)) / log(1.0 * escape);
+            hue = 360.0 * log(1.0 * escape_range) / log(1.0 * escape);
             sat += -log(2.0) + log(log(abs));
+            break;
+        case 7:
+            {
+                escape -= (params->escape_range_min_ - 1);
+                double palette_step = 1.0 * palette_count * log(1.0 * escape) / log(1.0 * escape_range);
+                uint32_t palette_ix = static_cast<uint32_t>(floor(palette_step));
+                palette_step -= palette_ix;
+                hue = (palette_step * palette[palette_ix][0] + (1.0 - palette_step) * palette[(palette_ix + 1) % palette_count][0]) * 360.0;
+                sat = (palette_step * palette[palette_ix][1] + (1.0 - palette_step) * palette[(palette_ix + 1) % palette_count][1]);
+                val = (palette_step * palette[palette_ix][2] + (1.0 - palette_step) * palette[(palette_ix + 1) % palette_count][2]);
+            }
             break;
         }
 

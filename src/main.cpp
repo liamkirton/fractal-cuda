@@ -26,6 +26,8 @@
 struct run_params {
     uint64_t I = 0;
     uint64_t F = 0;
+    uint64_t cuda_groups = 0;
+    uint64_t cuda_threads = 0;
 
     uint64_t image_width = default_image_width;
     uint64_t image_height = default_image_height;
@@ -65,7 +67,7 @@ int main(int argc, char *argv[]) {
             << "Usage: cuda-fractal.exe -r|-re <re> -i|-im <im>" << std::endl
             << "                        -s|-scale <scale> -sf|-scale-factor <scale-factor>" << std::endl
             << "                        -c|-count <count> -el|-escape-limit <escape-limit> -cm|-colour-method <colour-method>" << std::endl
-            << "                        -fp|-fixed-point I/F" << std::endl
+            << "                        -fp|-fixed-point <I/F> -cuda <G/T>" << std::endl
             << "                        -w|-width <width> -h|-height <height>" << std::endl
             << "                        -q|-quick -d|-detailed" << std::endl
             << std::endl;
@@ -115,16 +117,31 @@ int main(int argc, char *argv[]) {
         }
         else if ((arg == "-w") || (arg == "-width")) {
             params.image_width = std::atoll(param.c_str());
+            if (params.image_width == 0) {
+                return usage();
+            }
             ++i;
         }
         else if ((arg == "-h") || (arg == "-height")) {
             params.image_height = std::atoll(param.c_str());
+            if (params.image_height == 0) {
+                return usage();
+            }
             ++i;
         }
         else if (((arg == "-fp") || (arg == "-fixed-point")) && (param.find("/") != std::string::npos)) {
             params.I = std::atoll(param.substr(0, param.find("/")).c_str());
             params.F = std::atoll(param.substr(param.find("/") + 1).c_str());
-            if ((params.I == 0) || (params.I > 4) || (params.F == 0) || (params.F > 32)) {
+            if ((params.I == 0) || (params.I > 4) || (params.F == 0) || (params.F > 128)) {
+                return usage();
+            }
+            ++i;
+        }
+        else if ((arg == "-cuda") && (param.find("/") != std::string::npos)) {
+            params.cuda_groups = std::atoll(param.substr(0, param.find("/")).c_str());
+            params.cuda_threads = std::atoll(param.substr(param.find("/") + 1).c_str());
+            if ((params.cuda_groups == 0) || ((params.cuda_groups > 1) && ((params.cuda_groups % 2) != 0)) ||
+                (params.cuda_threads == 0) || (params.cuda_threads > 1024) || ((params.cuda_threads > 1) && ((params.cuda_threads % 2) != 0))) {
                 return usage();
             }
             ++i;
@@ -191,6 +208,9 @@ int main(int argc, char *argv[]) {
 template<>
 void run<0, 0>(png &png_writer, run_params &params) {
     fractal<double> f(params.image_width, params.image_height);
+    if ((params.cuda_groups != 0) && (params.cuda_threads != 0)) {
+        f.initialise(params.cuda_groups, params.cuda_threads);
+    }
     f.colour(params.colour_method);
     f.limits(params.escape_limit);
 
@@ -222,8 +242,11 @@ void run<0, 0>(png &png_writer, run_params &params) {
 template<uint32_t I, uint32_t F>
 void run(png &png_writer, run_params &params) {
     fractal<fixed_point<I, F>> f(params.image_width, params.image_height);
+    if ((params.cuda_groups != 0) && (params.cuda_threads != 0)) {
+        f.initialise(params.cuda_groups, params.cuda_threads);
+    }
     f.colour(params.colour_method);
-    f.limits(params.escape_limit); 
+    f.limits(params.escape_limit);
 
     fixed_point<I, F> re(params.re);
     fixed_point<I, F> im(params.im);
