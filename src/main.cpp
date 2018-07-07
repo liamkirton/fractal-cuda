@@ -2,8 +2,10 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -40,11 +42,16 @@ struct run_params {
     uint64_t count = 1;
     uint64_t skip = 0;
 
-    uint8_t colour_method = 0; 
+    uint8_t colour_method = 0;
+    std::string palette_file = "config\\palette_00.txt";
+    std::vector <std::tuple<double, double, double>> palette;
+
     uint64_t escape_limit = default_escape_limit;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void load_palette(run_params &params);
 
 template<uint32_t I, uint32_t F>
 void run(png &png_writer, run_params &params);
@@ -66,7 +73,8 @@ int main(int argc, char *argv[]) {
             << std::endl
             << "Usage: cuda-fractal.exe -r|-re <re> -i|-im <im>" << std::endl
             << "                        -s|-scale <scale> -sf|-scale-factor <scale-factor>" << std::endl
-            << "                        -c|-count <count> -el|-escape-limit <escape-limit> -cm|-colour-method <colour-method>" << std::endl
+            << "                        -c|-count <count> -el|-escape-limit <escape-limit>" << std::endl
+            << "                        -cm|-colour-method <colour-method> -pf|-palette-file <palette-file.txt>" << std::endl
             << "                        -fp|-fixed-point <I/F> -cuda <G/T>" << std::endl
             << "                        -w|-width <width> -h|-height <height>" << std::endl
             << "                        -q|-quick -d|-detailed" << std::endl
@@ -109,6 +117,10 @@ int main(int argc, char *argv[]) {
         }
         else if ((arg == "-cm") || (arg == "-colour-method")) {
             params.colour_method = static_cast<uint8_t>(std::atoi(param.c_str()));
+            ++i;
+        }
+        else if ((arg == "-pf") || (arg == "-palette-file")) {
+            params.palette_file = param;
             ++i;
         }
         else if (arg == "-skip") {
@@ -166,6 +178,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    load_palette(params);
+
     png png_writer(directory);
 
     if ((params.I == 0) && (params.F == 0)) {
@@ -205,13 +219,62 @@ int main(int argc, char *argv[]) {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+void load_palette(run_params &params) {
+    std::vector <std::tuple<double, double, double>> parse_palette;
+
+    std::ifstream f(params.palette_file, std::ios::in);
+    std::string l;
+    while (f.is_open() && !f.eof() && std::getline(f, l)) {
+        if ((l.length() == 0) || (l.at(0) == '#')) {
+            continue;
+        }
+
+        double hue = 0.0;
+        double sat = 0.0;
+        double val = 0.0;
+
+        std::stringstream ls(l);
+        ls >> hue >> sat >> val;
+
+        if (hue > 1.0) hue /= 360.0;
+        if (sat > 1.0) sat /= 100.0;
+        if (val > 1.0) val /= 100.0;
+
+        parse_palette.push_back(std::make_tuple(hue, sat, val));
+    }
+
+    auto binomial = [](uint32_t k, uint32_t n) {
+        double r = 1;
+        for (uint32_t i = 1; i <= k; ++i) {
+            r *= 1.0 * (n + 1 - i) / i;
+        }
+        return r;
+    };
+
+    for (uint32_t i = 0; i < parse_palette.size(); ++i) {
+        auto &p = parse_palette.at(i);
+        double hue = std::get<0>(p);
+        double sat = std::get<1>(p);
+        double val = std::get<2>(p);
+        double coeff = binomial(i, parse_palette.size() - 1);
+        params.palette.push_back(std::make_tuple(
+            hue * coeff,
+            sat * coeff,
+            val * coeff
+        ));
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 template<>
 void run<0, 0>(png &png_writer, run_params &params) {
     fractal<double> f(params.image_width, params.image_height);
     if ((params.cuda_groups != 0) && (params.cuda_threads != 0)) {
         f.initialise(params.cuda_groups, params.cuda_threads);
     }
-    f.colour(params.colour_method);
+
+    f.colour(params.colour_method, params.palette);
     f.limits(params.escape_limit);
 
     double re = std::stod(params.re);
@@ -245,7 +308,7 @@ void run(png &png_writer, run_params &params) {
     if ((params.cuda_groups != 0) && (params.cuda_threads != 0)) {
         f.initialise(params.cuda_groups, params.cuda_threads);
     }
-    f.colour(params.colour_method);
+    f.colour(params.colour_method, params.palette);
     f.limits(params.escape_limit);
 
     fixed_point<I, F> re(params.re);

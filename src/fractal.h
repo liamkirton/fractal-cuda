@@ -48,6 +48,9 @@ struct kernel_params {
     T re_;
     T im_;
     T scale_;
+
+    double *palette_;
+    uint64_t palette_count_;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -67,8 +70,8 @@ constexpr double re_max = 1.0 * static_scale;
 
     constexpr uint64_t default_image_width = 640;
     constexpr uint64_t default_image_height = 480;
-    constexpr uint64_t trial_image_width = 32;
-    constexpr uint64_t trial_image_height = 32;
+    constexpr uint64_t default_trial_image_width = default_cuda_threads;
+    constexpr uint64_t default_trial_image_height = default_cuda_groups;
 #else
     constexpr uint64_t default_cuda_groups = 256;
     constexpr uint64_t default_cuda_threads = 896;
@@ -129,8 +132,9 @@ public:
         escape_limit_ = escape_limit;
     }
 
-    void colour(const uint8_t method) {
+    void colour(const uint8_t method, std::vector<std::tuple<double, double, double>> &palette) {
         colour_method_ = method;
+        palette_ = palette;
     }
 
     void resize(const uint64_t image_width, const uint64_t image_height);
@@ -197,7 +201,9 @@ private:
     uint64_t image_height_;
     uint64_t trial_image_width_;
     uint64_t trial_image_height_;
+
     uint8_t colour_method_;
+    std::vector<std::tuple<double, double, double>> palette_;
 
     T re_;
     T im_;

@@ -3,8 +3,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <memory>
+#include <sstream>
+#include <tuple>
 #include <vector>
 
 #include "cuda_runtime.h"
@@ -33,25 +36,6 @@ __global__ void kernel_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kerne
 
 template<typename T>
 __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params, uint32_t *block_image);
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-const __device__ __constant__ double palette[][3] {
-    { 210.0 / 360.0, 0.0, 0.25 },
-    { 210.0 / 360.0, 0.4, 0.75 },
-    { 210.0 / 360.0, 0.0, 0.25 },
-    { 50.0 / 360.0, 0.0, 0.25 },
-    { 50.0 / 360.0, 0.4, 0.75 },
-    { 50.0 / 360.0, 0.0, 0.25 },
-    //{ 0.54, 0.40, 1.0 },
-    //{ 0.45, 0.50, 1.0 },
-    //{ 0.44, 0.70, 1.0 },
-    //{ 0.55, 0.60, 1.0 },
-    //{ 0.7, 0.50, 1.0 },
-    //{ 0.6, 0.40, 1.0 },
-};
-
-constexpr uint32_t palette_count = sizeof(palette) / sizeof(palette[0]);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -199,6 +183,23 @@ template<typename T>
 bool fractal<T>::generate(kernel_params<T> &params, bool colour) {
     kernel_params<T> *params_device{ nullptr };
 
+    if (colour && (palette_.size() > 0)) {
+        cudaMalloc(&params.palette_, 3 * sizeof(double) * palette_.size()); 
+        if (params.palette_ != nullptr) {
+            params.palette_count_ = palette_.size();
+
+            double *create_palette = new double[palette_.size() * 3];
+            for (uint32_t i = 0; i < palette_.size(); ++i) {
+                create_palette[i * 3 + 0] = std::get<0>(palette_.at(i));
+                create_palette[i * 3 + 1] = std::get<1>(palette_.at(i));
+                create_palette[i * 3 + 2] = std::get<2>(palette_.at(i));
+            }
+
+            cudaMemcpy(params.palette_, create_palette, 3 * sizeof(double) * palette_.size(), cudaMemcpyHostToDevice);
+            delete[] create_palette;
+        }
+    }
+
     cudaMalloc(&params_device, sizeof(kernel_params<T>));
     if (params_device == nullptr) {
         return false;
@@ -246,6 +247,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool colour) {
         }
     }
 
+    cudaFree(params.palette_);
     cudaFree(params_device);
 
     std::cout << std::endl;
@@ -289,12 +291,11 @@ __global__ void kernel_mandelbrot(kernel_block<double> *blocks, kernel_params<do
                 break;
             }
         }
+        block->escape_ = escape;
+        block->re_ = re;
+        block->im_ = im;
+        block->abs_ = abs;
     }
-
-    block->escape_ = escape;
-    block->re_ = re;
-    block->im_ = im;
-    block->abs_ = abs;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -363,12 +364,12 @@ __global__ void kernel_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kerne
                 break;
             }
         }
-    }
 
-    block->escape_ = escape;
-    block->re_.set(re);
-    block->im_.set(im);
-    block->abs_.set(abs);
+        block->escape_ = escape;
+        block->re_.set(re);
+        block->im_.set(im);
+        block->abs_.set(abs);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -385,8 +386,11 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
     double b = 0.0;
 
     if (escape < params->escape_limit_) {
-        double abs = static_cast<double>(block->abs_);
-        uint64_t escape_range = params->escape_range_max_ - params->escape_range_min_;
+        double abs = sqrt(static_cast<double>(block->abs_));
+        uint64_t escape_range = params->escape_range_max_ - params->escape_range_min_ + 1;
+        if (params->colour_method_ >= 2) {
+            //escape -= (params->escape_range_min_ - 1);
+        }
 
         double hue = 0.0;
         double sat = 0.95;
@@ -399,38 +403,40 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
             sat = 0.0;
             break;
         case 1:
-            hue = (escape + 1) - log(log(abs)) / log(2.0);
+            hue = 360 * (1.0 + escape - log(log(abs)) / log(2.0)) / params->escape_range_max_;
             break;
         case 2:
             hue = 360.0 * (escape + 1) / params->escape_range_max_ - log(log(abs)) / log(2.0);
             break;
         case 3:
-            escape -= (params->escape_range_min_ - 1);
             hue = 360.0 * log(1.0 * escape) / log(1.0 * escape_range);
             break;
         case 4:
-            escape -= (params->escape_range_min_ - 1);
             hue = 360.0 * log(1.0 * escape) / log(1.0 * escape_range);
             sat += -log(2.0) + log(log(abs));
             break;
         case 5:
-            escape -= (params->escape_range_min_ - 1);
             hue = 360.0 * log(1.0 * escape_range) / log(1.0 * escape);
             break;
         case 6:
-            escape -= (params->escape_range_min_ - 1);
             hue = 360.0 * log(1.0 * escape_range) / log(1.0 * escape);
             sat += -log(2.0) + log(log(abs));
             break;
         case 7:
-            {
-                escape -= (params->escape_range_min_ - 1);
-                double palette_step = 1.0 * palette_count * log(1.0 * escape) / log(1.0 * escape_range);
-                uint32_t palette_ix = static_cast<uint32_t>(floor(palette_step));
-                palette_step -= palette_ix;
-                hue = (palette_step * palette[palette_ix][0] + (1.0 - palette_step) * palette[(palette_ix + 1) % palette_count][0]) * 360.0;
-                sat = (palette_step * palette[palette_ix][1] + (1.0 - palette_step) * palette[(palette_ix + 1) % palette_count][1]);
-                val = (palette_step * palette[palette_ix][2] + (1.0 - palette_step) * palette[(palette_ix + 1) % palette_count][2]);
+        case 8:
+            hue = 0.0;
+            sat = 1.0;
+            val = 1.0;
+            if (params->palette_count_ > 0) {
+                double t = 1.0 * escape + 1.0 - log(log(abs)) / log(2.0);
+                t /= params->escape_limit_;
+                /*for (uint32_t i = 0; i < params->palette_count_; ++i) {
+                    double poly = pow(t, static_cast<double>(i)) * pow(1.0 - t, static_cast<double>(params->palette_count_ - 1 - i));
+                    hue += params->palette_[3 * i + 0] * poly;
+                    sat += params->palette_[3 * i + 1] * poly;
+                    val += params->palette_[3 * i + 2] * poly;
+                }*/
+                hue *= 360.0;
             }
             break;
         }
