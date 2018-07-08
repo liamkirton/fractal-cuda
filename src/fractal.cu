@@ -282,11 +282,11 @@ __global__ void kernel_mandelbrot(kernel_block<double> *blocks, kernel_params<do
 
     if (escape == params->escape_limit_) {
         for (uint64_t i = 0; i < params->escape_block_; ++i) {
-            double re_z_i = re;
+            double re_t = re;
             re = (re * re) - (im * im) + re_c;
-            im = (2.0 * re_z_i * im) + im_c;
+            im = (2.0 * re_t * im) + im_c;
             abs = re * re + im * im;
-            if (abs > 4.0) {
+            if (abs >= (default_escape_radius * default_escape_radius)) {
                 escape = i + params->escape_i_ * params->escape_block_;
                 break;
             }
@@ -359,7 +359,7 @@ __global__ void kernel_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kerne
             abs.set(re_prod);
             abs.add(im_prod);
 
-            if (static_cast<double>(abs) > 4.0) {
+            if (static_cast<double>(abs) >= (default_escape_radius * default_escape_radius)) {
                 escape = i + params->escape_i_ * params->escape_block_;
                 break;
             }
@@ -379,65 +379,48 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     kernel_block<T> *block = &blocks[tid];
-    uint64_t escape = block->escape_;
 
     double r = 0.0;
     double g = 0.0;
     double b = 0.0;
 
-    if (escape < params->escape_limit_) {
-        double abs = sqrt(static_cast<double>(block->abs_));
-        uint64_t escape_range = params->escape_range_max_ - params->escape_range_min_ + 1;
-        if (params->colour_method_ >= 2) {
-            //escape -= (params->escape_range_min_ - 1);
-        }
+    if (block->escape_ < params->escape_limit_) {
+        double abs = static_cast<double>(block->abs_); 
+        double escape = static_cast<double>(block->escape_) - static_cast<double>(params->escape_range_min_);
+        double escape_max = static_cast<double>(1.0 + params->escape_range_max_ - params->escape_range_min_);
 
         double hue = 0.0;
         double sat = 0.95;
         double val = 0.95;
 
+        double mu = 1.0 + escape - log2(0.5 * log(abs) / log(default_escape_radius));
+        if (mu < 1.0) mu = 1.0;
+
         switch (params->colour_method_) {
         default:
         case 0:
-            hue = 0.0;
             sat = 0.0;
             break;
         case 1:
-            hue = 360 * (1.0 + escape - log(log(abs)) / log(2.0)) / params->escape_range_max_;
-            break;
-        case 2:
-            hue = 360.0 * (escape + 1) / params->escape_range_max_ - log(log(abs)) / log(2.0);
-            break;
-        case 3:
-            hue = 360.0 * log(1.0 * escape) / log(1.0 * escape_range);
-            break;
-        case 4:
-            hue = 360.0 * log(1.0 * escape) / log(1.0 * escape_range);
-            sat += -log(2.0) + log(log(abs));
-            break;
-        case 5:
-            hue = 360.0 * log(1.0 * escape_range) / log(1.0 * escape);
-            break;
-        case 6:
-            hue = 360.0 * log(1.0 * escape_range) / log(1.0 * escape);
-            sat += -log(2.0) + log(log(abs));
-            break;
-        case 7:
-        case 8:
-            hue = 0.0;
-            sat = 1.0;
-            val = 1.0;
             if (params->palette_count_ > 0) {
-                double t = 1.0 * escape + 1.0 - log(log(abs)) / log(2.0);
-                t /= params->escape_limit_;
-                /*for (uint32_t i = 0; i < params->palette_count_; ++i) {
+                double t = log(mu) / log(escape_max);
+                hue = 0.0;
+                sat = 0.0;
+                val = 0.0;
+                for (uint32_t i = 0; i < params->palette_count_; ++i) {
                     double poly = pow(t, static_cast<double>(i)) * pow(1.0 - t, static_cast<double>(params->palette_count_ - 1 - i));
                     hue += params->palette_[3 * i + 0] * poly;
                     sat += params->palette_[3 * i + 1] * poly;
                     val += params->palette_[3 * i + 2] * poly;
-                }*/
+                }
                 hue *= 360.0;
             }
+            break;
+        case 2:
+            hue = 360.0 * log(mu) / log(escape_max);
+            break; 
+        case 3:
+            hue = 360.0 * log(escape_max) / log(mu);
             break;
         }
 

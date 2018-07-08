@@ -64,20 +64,23 @@ constexpr double re_max = 1.0 * static_scale;
 #ifdef _DEBUG
     constexpr uint64_t default_cuda_groups = 64;
     constexpr uint64_t default_cuda_threads = 256;
-    
+
     constexpr uint64_t default_escape_block = 256;
     constexpr uint64_t default_escape_limit = 256;
+    constexpr double default_escape_radius = 16.0;
 
     constexpr uint64_t default_image_width = 640;
     constexpr uint64_t default_image_height = 480;
     constexpr uint64_t default_trial_image_width = default_cuda_threads;
     constexpr uint64_t default_trial_image_height = default_cuda_groups;
+
 #else
     constexpr uint64_t default_cuda_groups = 256;
     constexpr uint64_t default_cuda_threads = 896;
 
     constexpr uint64_t default_escape_block = 16384;
     constexpr uint64_t default_escape_limit = 1048576;
+    constexpr double default_escape_radius = 16.0;
 
     constexpr uint64_t default_image_width = 1024;
     constexpr uint64_t default_image_height = 768;
