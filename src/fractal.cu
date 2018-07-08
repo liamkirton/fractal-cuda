@@ -420,6 +420,9 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
             hue = 360.0 * log(mu) / log(escape_max);
             break; 
         case 3:
+            if (mu < 2.71828182846) {
+                mu = 2.71828182846;
+            }
             hue = 360.0 * log(escape_max) / log(mu);
             break;
         }
