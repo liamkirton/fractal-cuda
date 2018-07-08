@@ -108,7 +108,8 @@ public:
             trial_image_width_(default_trial_image_width), trial_image_height_(default_trial_image_height),
             cuda_groups_(cuda_groups), cuda_threads_(cuda_threads),
             escape_block_(escape_block), escape_limit_(escape_limit),
-            colour_method_(0) {
+            colour_method_(0),
+            max_variance_(0.0), re_max_variance_(0.0), im_max_variance_(0.0) {
         initialise();
         specify(0.0, 0.0, 1.0);
     }
@@ -191,8 +192,18 @@ public:
         return static_cast<double>(scale_);
     }
 
+    double re_max_variance() {
+        return re_max_variance_;
+    }
+
+    double im_max_variance() {
+        return im_max_variance_;
+    }
+
 private:
     bool generate(kernel_params<T> &params, bool colour);
+    void pixel_to_coord(uint64_t &x, uint64_t &image_width, T &re, uint64_t &y, uint64_t &image_height, T &im);
+    void process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_block<T> *preview);
 
 private:
     uint64_t cuda_groups_;
@@ -211,6 +222,10 @@ private:
     T re_;
     T im_;
     T scale_;
+
+    double max_variance_;
+    T re_max_variance_;
+    T im_max_variance_;
 
     uint32_t *image_;
     kernel_block<T> *block_device_;

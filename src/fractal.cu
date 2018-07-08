@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <random>
 #include <sstream>
 #include <tuple>
 #include <vector>
@@ -111,8 +112,8 @@ void fractal<T>::resize(const uint64_t image_width, const uint64_t image_height)
 
 template<>
 void fractal<double>::specify(const double &re, const double &im, const double &scale) {
-    re_ = re;
-    im_ = im;
+    re_ = re_max_variance_ = re;
+    im_ = im_max_variance_ = im;
     scale_ = scale;
 }
 
@@ -146,25 +147,7 @@ bool fractal<T>::generate(bool trial) {
 
         kernel_block<T> *preview = new kernel_block<T>[trial_image_width_ * trial_image_height_];
         cudaMemcpy(preview, block_device_, trial_image_width_ * trial_image_height_ * sizeof(kernel_block<T>), cudaMemcpyDeviceToHost);
-
-        params.escape_range_min_ = 0xffffffffffffffff;
-        params.escape_range_max_ = 0;
-
-        for (uint32_t i = 0; i < trial_image_width_ * trial_image_height_; ++i) {
-            if (preview[i].escape_ < params.escape_range_min_) {
-                params.escape_range_min_ = preview[i].escape_;
-            }
-            if (preview[i].escape_ > params.escape_range_max_) {
-                params.escape_range_max_ = preview[i].escape_;
-            }
-        }
-
-        if (params.escape_range_min_ == params.escape_range_max_) {
-            params.escape_range_max_++;
-        }
-
-        std::cout << "    [+] Range: " << params.escape_range_min_ << " => " << params.escape_range_max_ << std::endl;
-
+        process_trial(params_trial, params, preview);
         delete[] preview;
     }
 
@@ -252,6 +235,104 @@ bool fractal<T>::generate(kernel_params<T> &params, bool colour) {
 
     std::cout << std::endl;
     return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<>
+void fractal<double>::pixel_to_coord(uint64_t &x, uint64_t &image_width, double &re, uint64_t &y, uint64_t &image_height, double &im) {
+    re = re_ + (re_min + x * (re_max - re_min) / image_width) * scale_;
+    im = im_ + (im_max - y * (im_max - im_min) / image_height) * scale_;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename T>
+void fractal<T>::pixel_to_coord(uint64_t &x, uint64_t &image_width, T &re, uint64_t &y, uint64_t &image_height, T &im) {
+    
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename T>
+void fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_block<T> *preview) {
+    params.escape_range_min_ = 0xffffffffffffffff;
+    params.escape_range_max_ = 0;
+
+    for (uint64_t i = 0; i < trial_image_width_ * trial_image_height_; ++i) {
+        if (preview[i].escape_ < params.escape_range_min_) {
+            params.escape_range_min_ = preview[i].escape_;
+        }
+        if (preview[i].escape_ > params.escape_range_max_) {
+            params.escape_range_max_ = preview[i].escape_;
+        }
+    }
+
+    std::vector<std::tuple<double, int32_t, int32_t>> variances;
+
+    int32_t x_min = trial_image_width_ / 4;
+    int32_t x_max = 3 * trial_image_width_ / 4;
+    int32_t y_min = trial_image_height_ / 4;
+    int32_t y_max = 3 * trial_image_height_ / 4;
+
+    double escape_max = static_cast<double>(1.0 + params.escape_range_max_ - params.escape_range_min_);
+
+    for (int32_t y = y_min; y < y_max; ++y) {
+        for (int32_t x = x_min; x < x_max; ++x) {
+            uint32_t block_escapes[9]{ 0 };
+            for (int32_t j = 0; j < 9; ++j) {
+                int32_t r_ix = y - 1 + (j / 3);
+                if ((r_ix >= 0) && (r_ix < trial_image_height_)) {
+                    int32_t p_ix = x - 1 + (j % 3);
+                    if ((p_ix >= 0) && (p_ix < trial_image_width_)) {
+                        if (preview[r_ix * trial_image_width_ + p_ix].escape_ < params.escape_limit_) {
+                            double escape = static_cast<double>(preview[r_ix * trial_image_width_ + p_ix].escape_) - static_cast<double>(params.escape_range_min_);
+                            double mu = 1.0 + escape - log2(0.5 * log(preview[r_ix * trial_image_width_ + p_ix].abs_) / log(default_escape_radius));
+                            if (mu < 0.0) mu = 0.0;
+                            block_escapes[j] = mu / log(escape_max);
+                        }
+                    }
+                }
+            }
+
+            double block_mean = 0.0;
+            for (int32_t j = 0; j < 9; ++j) {
+                block_mean += block_escapes[j];
+            }
+            block_mean /= 9;
+
+            double block_variance = 0.0;
+            for (int32_t j = 0; j < 9; ++j) {
+                block_variance += (block_escapes[j] - block_mean) * (block_escapes[j] - block_mean);
+            }
+            block_variance /= 9;
+
+            variances.push_back(std::make_tuple(block_variance, x, y));
+        }
+    }
+
+    std::sort(variances.begin(), variances.end(), [](auto a, auto b) { return std::get<0>(a) > std::get<0>(b); });
+    std::remove_if(variances.begin(), variances.end(), [](auto a) { return std::get<0>(a) == 0.0; });
+
+    std::random_device random;
+    std::mt19937 gen(random());
+    std::uniform_int_distribution<> dist(0, variances.size() / 20);
+    auto max = variances.at(dist(gen));
+
+    double max_variance = std::get<0>(max);
+    uint64_t max_variance_x = static_cast<uint64_t>(std::get<1>(max));
+    uint64_t max_variance_y = static_cast<uint64_t>(std::get<2>(max));
+
+    if (max_variance != 0.0) {
+        pixel_to_coord(max_variance_x, trial_image_width_, re_max_variance_, max_variance_y, trial_image_height_, im_max_variance_);
+        std::cout << "max_variance: " << std::get<0>(max) << ", max_variance_x: " << max_variance_x << ", " << "re_max_variance_: " << re_max_variance_ << ", max_variance_y: " << max_variance_y << ", im_max_variance_: " << im_max_variance_ << std::endl;
+    }
+
+    if (params.escape_range_min_ == params.escape_range_max_) {
+        params.escape_range_max_++;
+    }
+
+    std::cout << "    [+] Escape Range: " << params.escape_range_min_ << " => " << params.escape_range_max_ << std::endl;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

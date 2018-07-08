@@ -295,6 +295,9 @@ void run<0, 0>(png &png_writer, run_params &params) {
             gen_timer.print();
 
             png_writer.write(f, i);
+
+            re = f.re_max_variance();
+            im = f.im_max_variance();
         }
         scale *= scale_factor;
     }
