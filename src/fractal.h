@@ -192,17 +192,17 @@ public:
         return static_cast<double>(scale_);
     }
 
-    double re_max_variance() {
+    T &re_max_variance() {
         return re_max_variance_;
     }
 
-    double im_max_variance() {
+    T &im_max_variance() {
         return im_max_variance_;
     }
 
 private:
     bool generate(kernel_params<T> &params, bool colour);
-    void pixel_to_coord(uint64_t &x, uint64_t &image_width, T &re, uint64_t &y, uint64_t &image_height, T &im);
+    void pixel_to_coord(uint64_t x, uint64_t image_width, T &re, uint64_t y, uint64_t image_height, T &im);
     void process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_block<T> *preview);
 
 private:

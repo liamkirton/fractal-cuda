@@ -39,6 +39,8 @@ struct run_params {
     std::string scale = "1.0";
     std::string scale_factor = "0.5";
 
+    bool follow_variance = false;
+
     uint64_t count = 1;
     uint64_t skip = 0;
 
@@ -73,6 +75,7 @@ int main(int argc, char *argv[]) {
             << std::endl
             << "Usage: cuda-fractal.exe -r|-re <re> -i|-im <im>" << std::endl
             << "                        -s|-scale <scale> -sf|-scale-factor <scale-factor>" << std::endl
+            << "                        -fv|-follow-variance" << std::endl
             << "                        -c|-count <count> -el|-escape-limit <escape-limit>" << std::endl
             << "                        -cm|-colour-method <colour-method> -pf|-palette-file <palette-file.txt>" << std::endl
             << "                        -fp|-fixed-point <I/F> -cuda <G/T>" << std::endl
@@ -106,6 +109,9 @@ int main(int argc, char *argv[]) {
         else if ((arg == "-sf") || (arg == "-scale-factor")) {
             params.scale_factor = param;
             ++i;
+        }
+        else if ((arg == "-fv") || (arg == "-follow-variance")) {
+            params.follow_variance = true;
         }
         else if ((arg == "-c") || (arg == "-count")) {
             params.count = std::atoll(param.c_str());
@@ -296,8 +302,10 @@ void run<0, 0>(png &png_writer, run_params &params) {
 
             png_writer.write(f, i);
 
-            re = f.re_max_variance();
-            im = f.im_max_variance();
+            if (params.follow_variance) {
+                re = f.re_max_variance();
+                im = f.im_max_variance();
+            }
         }
         scale *= scale_factor;
     }
@@ -332,6 +340,11 @@ void run(png &png_writer, run_params &params) {
             gen_timer.print();
 
             png_writer.write(f, i);
+
+            if (params.follow_variance) {
+                re.set(f.re_max_variance());
+                im.set(f.im_max_variance());
+            }
         }
         scale.multiply(scale_factor);
     }

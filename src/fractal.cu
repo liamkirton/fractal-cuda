@@ -139,6 +139,8 @@ bool fractal<T>::generate(bool trial) {
         return false;
     }
 
+    std::cout << "  [+] Re: " << std::setprecision(5) << static_cast<double>(re_) << ", Im: " << static_cast<double>(im_) << ", Scale: " << static_cast<double>(scale_) << std::endl;
+
     if (trial) {
         std::cout << "  [+] Trial " << trial_image_width_ << "x" << trial_image_height_ << std::endl;
         if (!generate(params_trial, false)) {
@@ -240,7 +242,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool colour) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<>
-void fractal<double>::pixel_to_coord(uint64_t &x, uint64_t &image_width, double &re, uint64_t &y, uint64_t &image_height, double &im) {
+void fractal<double>::pixel_to_coord(uint64_t x, uint64_t image_width, double &re, uint64_t y, uint64_t image_height, double &im) {
     re = re_ + (re_min + x * (re_max - re_min) / image_width) * scale_;
     im = im_ + (im_max - y * (im_max - im_min) / image_height) * scale_;
 }
@@ -248,14 +250,23 @@ void fractal<double>::pixel_to_coord(uint64_t &x, uint64_t &image_width, double 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-void fractal<T>::pixel_to_coord(uint64_t &x, uint64_t &image_width, T &re, uint64_t &y, uint64_t &image_height, T &im) {
-    
+void fractal<T>::pixel_to_coord(uint64_t x, uint64_t image_width, T &re, uint64_t y, uint64_t image_height, T &im) {
+    re.set(re_min + x * (re_max - re_min) / image_width);
+    im.set(im_max - y * (im_max - im_min) / image_height);
+    re.multiply(scale_);
+    im.multiply(scale_);
+    re.add(re_);
+    im.add(im_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
 void fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_block<T> *preview) {
+    //
+    // Calculate Escape Range
+    //
+
     params.escape_range_min_ = 0xffffffffffffffff;
     params.escape_range_max_ = 0;
 
@@ -267,6 +278,17 @@ void fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> 
             params.escape_range_max_ = preview[i].escape_;
         }
     }
+
+
+    if (params.escape_range_min_ == params.escape_range_max_) {
+        params.escape_range_max_++;
+    }
+
+    std::cout << "    [+] Escape Range: " << params.escape_range_min_ << " => " << params.escape_range_max_ << std::endl;
+
+    //
+    // Calculate Escape Range
+    //
 
     std::vector<std::tuple<double, int32_t, int32_t>> variances;
 
@@ -287,7 +309,7 @@ void fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> 
                     if ((p_ix >= 0) && (p_ix < trial_image_width_)) {
                         if (preview[r_ix * trial_image_width_ + p_ix].escape_ < params.escape_limit_) {
                             double escape = static_cast<double>(preview[r_ix * trial_image_width_ + p_ix].escape_) - static_cast<double>(params.escape_range_min_);
-                            double mu = 1.0 + escape - log2(0.5 * log(preview[r_ix * trial_image_width_ + p_ix].abs_) / log(default_escape_radius));
+                            double mu = 1.0 + escape - log2(0.5 * log(static_cast<double>(preview[r_ix * trial_image_width_ + p_ix].abs_)) / log(default_escape_radius));
                             if (mu < 0.0) mu = 0.0;
                             block_escapes[j] = mu / log(escape_max);
                         }
@@ -306,6 +328,7 @@ void fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> 
                 block_variance += (block_escapes[j] - block_mean) * (block_escapes[j] - block_mean);
             }
             block_variance /= 9;
+            block_variance /= (1.0 + (pow(1.0 * trial_image_width_ / 2.0 - x, 2.0) + pow(1.0 * trial_image_height_ / 2.0 - y, 2.0)));
 
             variances.push_back(std::make_tuple(block_variance, x, y));
         }
@@ -320,19 +343,13 @@ void fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> 
     auto max = variances.at(dist(gen));
 
     double max_variance = std::get<0>(max);
-    uint64_t max_variance_x = static_cast<uint64_t>(std::get<1>(max));
-    uint64_t max_variance_y = static_cast<uint64_t>(std::get<2>(max));
 
     if (max_variance != 0.0) {
+        uint64_t max_variance_x = static_cast<uint64_t>(std::get<1>(max));
+        uint64_t max_variance_y = static_cast<uint64_t>(std::get<2>(max));
         pixel_to_coord(max_variance_x, trial_image_width_, re_max_variance_, max_variance_y, trial_image_height_, im_max_variance_);
-        std::cout << "max_variance: " << std::get<0>(max) << ", max_variance_x: " << max_variance_x << ", " << "re_max_variance_: " << re_max_variance_ << ", max_variance_y: " << max_variance_y << ", im_max_variance_: " << im_max_variance_ << std::endl;
+        std::cout << "    [+] Max Variance: " << std::get<0>(max) << " => x: " << max_variance_x << ", y: " << max_variance_y << std::endl;
     }
-
-    if (params.escape_range_min_ == params.escape_range_max_) {
-        params.escape_range_max_++;
-    }
-
-    std::cout << "    [+] Escape Range: " << params.escape_range_min_ << " => " << params.escape_range_max_ << std::endl;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -483,7 +500,7 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
             sat = 0.0;
             break;
         case 1:
-            if (params->palette_count_ > 0) {
+            {
                 double t = log(mu) / log(escape_max);
                 hue = 0.0;
                 sat = 0.0;
