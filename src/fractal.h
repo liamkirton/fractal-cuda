@@ -11,9 +11,10 @@
 template<typename T>
 struct kernel_block {
     uint64_t escape_;
+    T re_c_;
+    T im_c_;
     T re_;
     T im_;
-    T abs_;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -78,9 +79,10 @@ constexpr double re_max = 1.0 * static_scale;
     constexpr uint64_t default_cuda_groups = 256;
     constexpr uint64_t default_cuda_threads = 896;
 
-    constexpr uint64_t default_escape_block = 16384;
+    constexpr uint64_t default_escape_block = 65536;
     constexpr uint64_t default_escape_limit = 1048576;
     constexpr double default_escape_radius = 16.0;
+    constexpr double default_escape_radius_square = default_escape_radius * default_escape_radius;
 
     constexpr uint64_t default_image_width = 1024;
     constexpr uint64_t default_image_height = 768;
@@ -203,7 +205,7 @@ public:
 private:
     bool generate(kernel_params<T> &params, bool colour);
     void pixel_to_coord(uint64_t x, uint64_t image_width, T &re, uint64_t y, uint64_t image_height, T &im);
-    void process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_block<T> *preview);
+    bool process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_block<T> *preview);
 
 private:
     uint64_t cuda_groups_;

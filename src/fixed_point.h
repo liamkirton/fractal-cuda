@@ -7,23 +7,23 @@
 template<uint32_t I, uint32_t F>
 class fixed_point {
 public:
-    __host__ __device__ fixed_point() : data{ 0 } {
+    inline __host__ __device__ fixed_point() : data{ 0 } {
     }
 
-    __host__ __device__ fixed_point(const fixed_point<I, F> &v) {
+    inline __host__ __device__ fixed_point(const fixed_point<I, F> &v) {
         memcpy(&data, &v.data, sizeof(data));
     }
 
-    __host__ __device__ fixed_point(const fixed_point<I, F> *v) {
+    inline __host__ __device__ fixed_point(const fixed_point<I, F> *v) {
         memcpy(&data, &v->data, sizeof(data));
     }
 
     template<typename T>
-    __host__ __device__ fixed_point(const T &v) {
+    inline __host__ __device__ fixed_point(const T &v) {
         set(v);
     }
 
-    __host__ __device__ fixed_point(const char *v) {
+    inline __host__ __device__ fixed_point(const char *v) {
         set(std::string(v));
     }
 
@@ -116,8 +116,7 @@ public:
     inline __host__ __device__ void set(const double &v) {
         double integer{ 0 };
         double decimal = modf(fabs(v), &integer);
-
-        fixed_point<I, F> integer_part(static_cast<int64_t>(integer));
+        set(static_cast<int64_t>(integer));
 
         fixed_point<I, F> decimal_part;
         for (uint32_t i = 0; i < 32 * F; ++i) {
@@ -125,8 +124,6 @@ public:
             decimal = modf(decimal, &integer);
             decimal_part.bit_set(32 * F - (i + 1), (integer > 0) ? 1 : 0);
         }
-
-        set(integer_part);
         add(decimal_part);
 
         if (v < 0) {
@@ -206,8 +203,12 @@ public:
     }
 
     inline __host__ __device__ void add(const uint64_t v) {
-        fixed_point<I, F> t(v);
-        add(t);
+        uint64_t carry = 0;
+        for (uint32_t i = 0; i < I; ++i) {
+            uint64_t sum = static_cast<uint64_t>(data[F + i]) + ((i < 2) ? static_cast<uint64_t>(reinterpret_cast<const uint32_t *>(&v)[i]) : 0) + carry;
+            data[F + i] = (sum & 0xffffffff);
+            carry = (sum >> 32);
+        }
     }
 
     inline __host__ __device__ void add(const double &v) {
@@ -223,27 +224,31 @@ public:
 
     inline __host__ __device__ void multiply(const fixed_point<I, F> &b) {
         fixed_point<2 * I + F, F> accum;
-        fixed_point<2 * I + F, F> result;
+        uint32_t result[I + F];
 
-        fixed_point<2 * I + F, F> a_ext(*this);
-        fixed_point<2 * I + F, F> b_ext(b);
+        uint64_t a_ext = (data[(I + F) - 1] & 0x80000000) ? 0xffffffff : 0;
+        uint64_t b_ext = (b.data[(I + F) - 1] & 0x80000000) ? 0xffffffff : 0;
 
         for (uint32_t i = 0; i < 2 * (I + F); ++i) {
             for (uint32_t j = 0; j <= i; ++j) {
-                accum.add(static_cast<uint64_t>(a_ext.data[j]) * static_cast<uint64_t>(b_ext.data[i - j]));
+                const uint32_t l_ix = j;
+                const uint32_t r_ix = i - j;
+                accum.add(((l_ix < (I + F)) ? static_cast<uint64_t>(data[l_ix]) : a_ext) * ((r_ix < (I + F)) ? static_cast<uint64_t>(b.data[r_ix]) : b_ext));
             }
-            result.data[i] = accum.data[F];
+
+            // Combine: result.data[i] = accum.data[F]; result.shiftr(32 * F);
+            if ((i >= F) && (i < 2 * F + I)) {
+                result[i - F] = accum.data[F];
+            }
 
             // Combine: accum.shiftr_32(); accum.zero_fractional();
-            for (int32_t i = F; i < 2 * (I + F) - 1; ++i) {
-                accum.data[i] = accum.data[i + 1];
+            for (int32_t i = 0; i < 2 * (I + F) - 1; ++i) {
+                accum.data[i] = (i < F) ? 0 : accum.data[i + 1];
             }
             accum.data[2 * (I + F) - 1] = 0;
-            memset(&accum.data, 0, sizeof(uint32_t) * F);
         }
 
-        // Combine: result.shiftr(32 * F); set(result);
-        memcpy(&data, &result.data[F], sizeof(data));
+        memcpy(&data, &result, sizeof(data));
     }
 
     inline __host__ __device__ void multiply(const uint64_t &v) {
@@ -257,12 +262,12 @@ public:
     }
 
     inline __host__ __device__ void negate() {
+        uint64_t carry = 0;
         for (uint32_t i = 0; i < I + F; ++i) {
-            data[i] = ~data[i];
+            uint64_t sum = static_cast<uint64_t>(~data[i]) + ((i == 0) ? 1 : 0) + carry;
+            data[i] = (sum & 0xffffffff);
+            carry = (sum >> 32);
         }
-        fixed_point<I, F> lsb;
-        lsb.data[0] = 1;
-        add(lsb);
     }
 
     inline __host__ __device__ void shiftl(const uint64_t v) {
@@ -280,6 +285,11 @@ public:
                 }
             }
         }
+    }
+
+    inline __host__ __device__ void shiftl_32() {
+        memmove(&data[1], &data, sizeof(uint32_t) * (I + F - 1));
+        data[0] = 0;
     }
 
     inline __host__ __device__ void shiftr(const uint64_t v) {

@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <random>
 #include <sstream>
 #include <thread>
 #include <tuple>
@@ -36,10 +37,12 @@ struct run_params {
 
     std::string re = "0.0";
     std::string im = "0.0";
-    std::string scale = "1.0";
-    std::string scale_factor = "0.5";
+    double scale = 1.0;
+    double scale_factor = 0.5;
 
     bool follow_variance = false;
+    bool random = false;
+    bool reset = false;
 
     uint64_t count = 1;
     uint64_t skip = 0;
@@ -75,7 +78,7 @@ int main(int argc, char *argv[]) {
             << std::endl
             << "Usage: cuda-fractal.exe -r|-re <re> -i|-im <im>" << std::endl
             << "                        -s|-scale <scale> -sf|-scale-factor <scale-factor>" << std::endl
-            << "                        -fv|-follow-variance" << std::endl
+            << "                        -fv|-follow-variance -r|-random -reset" << std::endl
             << "                        -c|-count <count> -el|-escape-limit <escape-limit>" << std::endl
             << "                        -cm|-colour-method <colour-method> -pf|-palette-file <palette-file.txt>" << std::endl
             << "                        -fp|-fixed-point <I/F> -cuda <G/T>" << std::endl
@@ -103,15 +106,24 @@ int main(int argc, char *argv[]) {
             ++i;
         }
         else if ((arg == "-s") || (arg == "-scale")) {
-            params.scale = param;
+            params.scale = std::stod(param);
+            if (params.scale > 10.0) {
+                params.scale = 1.0 / params.scale;
+            }
             ++i;
         }
         else if ((arg == "-sf") || (arg == "-scale-factor")) {
-            params.scale_factor = param;
+            params.scale_factor = std::stod(param);
             ++i;
         }
         else if ((arg == "-fv") || (arg == "-follow-variance")) {
             params.follow_variance = true;
+        }
+        else if ((arg == "-r") || (arg == "-random")) {
+            params.random = true;
+        }
+        else if (arg == "-reset") {
+            params.reset = true;
         }
         else if ((arg == "-c") || (arg == "-count")) {
             params.count = std::atoll(param.c_str());
@@ -167,7 +179,7 @@ int main(int argc, char *argv[]) {
         else if ((arg == "-d") || (arg == "-detailed")) {
             params.image_width = 5120;
             params.image_height = 2880;
-            params.escape_limit = 4 * 1048576;
+            params.escape_limit = default_escape_limit;
         }
         else if ((arg == "-q") || (arg == "-quick")) {
             params.image_width = 320;
@@ -196,18 +208,18 @@ int main(int argc, char *argv[]) {
         case 1:
             switch (params.F) {
             case 1: run<1, 1>(png_writer, params); break;
-            case 2: run<1, 2>(png_writer, params); break;
+            //case 2: run<1, 2>(png_writer, params); break;
             default: return usage();
             }
             break;
         case 2:
             switch (params.F) {
             case 2: run<2, 2>(png_writer, params); break;
-            case 4: run<2, 4>(png_writer, params); break;
-            case 8: run<2, 8>(png_writer, params); break;
-            case 16: run<2, 16>(png_writer, params); break;
-            case 24: run<2, 24>(png_writer, params); break;
-            case 32: run<2, 32>(png_writer, params); break;
+            //case 4: run<2, 4>(png_writer, params); break;
+            //case 8: run<2, 8>(png_writer, params); break;
+            //case 16: run<2, 16>(png_writer, params); break;
+            //case 24: run<2, 24>(png_writer, params); break;
+            //case 32: run<2, 32>(png_writer, params); break;
             default: return usage();
             }
             break;
@@ -283,10 +295,26 @@ void run<0, 0>(png &png_writer, run_params &params) {
     f.colour(params.colour_method, params.palette);
     f.limits(params.escape_limit);
 
-    double re = std::stod(params.re);
-    double im = std::stod(params.im);
-    double scale = std::stod(params.scale);
-    double scale_factor = std::stod(params.scale_factor);
+    double re{ 0 };
+    double im{ 0 };
+    double scale{ 0 };
+    double scale_factor{ 0 };
+
+    auto reset = [&]() {
+        re = std::stod(params.re);
+        im = std::stod(params.im);
+        scale = params.scale;
+        scale_factor = params.scale_factor;
+        if (params.random) {
+            std::random_device random;
+            std::mt19937 gen(random());
+            re = std::uniform_real_distribution<>(-2.0, 1.0)(gen);
+            im = std::uniform_real_distribution<>(-1.0, 1.0)(gen);
+            scale = std::uniform_real_distribution<>(0.00005, 1.0)(gen);
+        }
+    };
+
+    reset();
 
     for (uint64_t i = 0; i < params.count; ++i) {
         if (i >= params.skip) {
@@ -294,17 +322,23 @@ void run<0, 0>(png &png_writer, run_params &params) {
             f.specify(re, im, scale);
 
             timer gen_timer;
-            if (!f.generate()) {
-                break;
+            if (f.generate()) {
+                gen_timer.stop();
+                gen_timer.print();
+
+                png_writer.write(f, i);
+
+                if (params.follow_variance) {
+                    re = f.re_max_variance();
+                    im = f.im_max_variance();
+                }
             }
-            gen_timer.stop();
-            gen_timer.print();
-
-            png_writer.write(f, i);
-
-            if (params.follow_variance) {
-                re = f.re_max_variance();
-                im = f.im_max_variance();
+            else {
+                if (!params.reset) {
+                    break;
+                }
+                --i;
+                reset();
             }
         }
         scale *= scale_factor;
