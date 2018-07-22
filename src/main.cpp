@@ -37,8 +37,8 @@ struct run_params {
 
     std::string re = "0.0";
     std::string im = "0.0";
-    double scale = 1.0;
-    double scale_factor = 0.5;
+    std::string scale = "1.0";
+    std::string scale_factor = "0.5";
 
     bool follow_variance = false;
     bool random = false;
@@ -106,14 +106,11 @@ int main(int argc, char *argv[]) {
             ++i;
         }
         else if ((arg == "-s") || (arg == "-scale")) {
-            params.scale = std::stod(param);
-            if (params.scale > 10.0) {
-                params.scale = 1.0 / params.scale;
-            }
+            params.scale = param;
             ++i;
         }
         else if ((arg == "-sf") || (arg == "-scale-factor")) {
-            params.scale_factor = std::stod(param);
+            params.scale_factor = param;
             ++i;
         }
         else if ((arg == "-fv") || (arg == "-follow-variance")) {
@@ -208,18 +205,18 @@ int main(int argc, char *argv[]) {
         case 1:
             switch (params.F) {
             case 1: run<1, 1>(png_writer, params); break;
-            //case 2: run<1, 2>(png_writer, params); break;
+            case 2: run<1, 2>(png_writer, params); break;
             default: return usage();
             }
             break;
         case 2:
             switch (params.F) {
             case 2: run<2, 2>(png_writer, params); break;
-            //case 4: run<2, 4>(png_writer, params); break;
-            //case 8: run<2, 8>(png_writer, params); break;
-            //case 16: run<2, 16>(png_writer, params); break;
-            //case 24: run<2, 24>(png_writer, params); break;
-            //case 32: run<2, 32>(png_writer, params); break;
+            case 4: run<2, 4>(png_writer, params); break;
+            case 8: run<2, 8>(png_writer, params); break;
+            case 16: run<2, 16>(png_writer, params); break;
+            case 24: run<2, 24>(png_writer, params); break;
+            case 32: run<2, 32>(png_writer, params); break;
             default: return usage();
             }
             break;
@@ -303,8 +300,11 @@ void run<0, 0>(png &png_writer, run_params &params) {
     auto reset = [&]() {
         re = std::stod(params.re);
         im = std::stod(params.im);
-        scale = params.scale;
-        scale_factor = params.scale_factor;
+        scale = std::stod(params.scale);
+        if (scale > 10.0) {
+            scale = 1.0 / scale;
+        }
+        scale_factor = std::stod(params.scale_factor);
         if (params.random) {
             std::random_device random;
             std::mt19937 gen(random());

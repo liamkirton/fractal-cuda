@@ -33,7 +33,7 @@ struct kernel_params {
                 escape_block_(escape_block), escape_limit_(escape_limit), colour_method_(colour_method),
                 escape_i_(0), escape_range_min_(0), escape_range_max_(escape_limit),
                 image_chunk_(0),
-                re_(re), im_(im), scale_(scale) {};
+                re_c_(0), im_c_(0), re_(re), im_(im), scale_(scale) {};
     uint64_t image_width_;
     uint64_t image_height_;
 
@@ -46,6 +46,8 @@ struct kernel_params {
     uint8_t colour_method_;
     uint64_t image_chunk_;
 
+    T re_c_;
+    T im_c_;
     T re_;
     T im_;
     T scale_;
@@ -74,21 +76,21 @@ constexpr double re_max = 1.0 * static_scale;
     constexpr uint64_t default_image_height = 480;
     constexpr uint64_t default_trial_image_width = default_cuda_threads;
     constexpr uint64_t default_trial_image_height = default_cuda_groups;
-
 #else
     constexpr uint64_t default_cuda_groups = 256;
-    constexpr uint64_t default_cuda_threads = 896;
+    constexpr uint64_t default_cuda_threads = 1024;
 
     constexpr uint64_t default_escape_block = 65536;
     constexpr uint64_t default_escape_limit = 1048576;
     constexpr double default_escape_radius = 16.0;
-    constexpr double default_escape_radius_square = default_escape_radius * default_escape_radius;
 
     constexpr uint64_t default_image_width = 1024;
     constexpr uint64_t default_image_height = 768;
     constexpr uint64_t default_trial_image_width = default_cuda_threads;
     constexpr uint64_t default_trial_image_height = default_cuda_groups;
 #endif
+
+constexpr double default_escape_radius_square = default_escape_radius * default_escape_radius;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -223,29 +223,36 @@ public:
     }
 
     inline __host__ __device__ void multiply(const fixed_point<I, F> &b) {
-        fixed_point<2 * I + F, F> accum;
+        fixed_point<I + F, F> accum;
         uint32_t result[I + F];
 
-        uint64_t a_ext = (data[(I + F) - 1] & 0x80000000) ? 0xffffffff : 0;
-        uint64_t b_ext = (b.data[(I + F) - 1] & 0x80000000) ? 0xffffffff : 0;
+        // CUDA Compiler Bug (22/07/2018)
+        volatile const fixed_point<I, F> *a_p = this;
+        volatile const fixed_point<I, F> *b_p = &b;
 
-        for (uint32_t i = 0; i < 2 * (I + F); ++i) {
+        uint32_t a_ext = (data[(I + F) - 1] & 0x80000000) ? 0xffffffff : 0;
+        uint32_t b_ext = (b.data[(I + F) - 1] & 0x80000000) ? 0xffffffff : 0;
+
+        for (uint32_t i = 0; i < I + 2 * F; ++i) {
             for (uint32_t j = 0; j <= i; ++j) {
                 const uint32_t l_ix = j;
                 const uint32_t r_ix = i - j;
-                accum.add(((l_ix < (I + F)) ? static_cast<uint64_t>(data[l_ix]) : a_ext) * ((r_ix < (I + F)) ? static_cast<uint64_t>(b.data[r_ix]) : b_ext));
+                accum.add(
+                    static_cast<uint64_t>((l_ix < (I + F)) ? a_p->data[l_ix] : a_ext) *
+                    static_cast<uint64_t>((r_ix < (I + F)) ? b_p->data[r_ix] : b_ext)
+                );
             }
 
-            // Combine: result.data[i] = accum.data[F]; result.shiftr(32 * F);
-            if ((i >= F) && (i < 2 * F + I)) {
+            // Combine: result.shiftr(32 * F); set(result);
+            if (i >= F) {
                 result[i - F] = accum.data[F];
             }
 
             // Combine: accum.shiftr_32(); accum.zero_fractional();
-            for (int32_t i = 0; i < 2 * (I + F) - 1; ++i) {
+            for (int32_t i = 0; i < I + 2 * F - 1; ++i) {
                 accum.data[i] = (i < F) ? 0 : accum.data[i + 1];
             }
-            accum.data[2 * (I + F) - 1] = 0;
+            accum.data[I + 2 * F - 1] = 0;
         }
 
         memcpy(&data, &result, sizeof(data));

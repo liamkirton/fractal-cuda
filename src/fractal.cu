@@ -20,21 +20,23 @@
 
 template class fractal<double>;
 template class fractal<fixed_point<1, 1>>; 
-//template class fractal<fixed_point<1, 2>>;
+template class fractal<fixed_point<1, 2>>;
 template class fractal<fixed_point<2, 2>>;
-//template class fractal<fixed_point<2, 4>>;
-//template class fractal<fixed_point<2, 8>>;
-//template class fractal<fixed_point<2, 16>>;
-//template class fractal<fixed_point<2, 24>>; 
-//template class fractal<fixed_point<2, 32>>;
+template class fractal<fixed_point<2, 4>>;
+template class fractal<fixed_point<2, 8>>;
+template class fractal<fixed_point<2, 16>>;
+template class fractal<fixed_point<2, 24>>; 
+template class fractal<fixed_point<2, 32>>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+__global__ void kernel_julia_init(kernel_block<double> *blocks, kernel_params<double> *params);
 __global__ void kernel_mandelbrot_init(kernel_block<double> *blocks, kernel_params<double> *params);
-__global__ void kernel_mandelbrot(kernel_block<double> *blocks, kernel_params<double> *params);
+__global__ void kernel_fractal(kernel_block<double> *blocks, kernel_params<double> *params);
 
+template<uint32_t I, uint32_t F> __global__ void kernel_julia_init(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params);
 template<uint32_t I, uint32_t F> __global__ void kernel_mandelbrot_init(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params);
-template<uint32_t I, uint32_t F> __global__ void kernel_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params);
+template<uint32_t I, uint32_t F> __global__ void kernel_fractal(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params);
 
 template<typename T>
 __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params, uint32_t *block_image);
@@ -212,7 +214,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool colour) {
             if (i == 0) {
                 kernel_mandelbrot_init<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device_, params_device);
             }
-            kernel_mandelbrot<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device_, params_device);
+            kernel_fractal<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device_, params_device);
 
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                 std::cout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError << std::endl;
@@ -388,7 +390,7 @@ __global__ void kernel_mandelbrot_init(kernel_block<double> *blocks, kernel_para
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-__global__ void kernel_mandelbrot(kernel_block<double> *blocks, kernel_params<double> *params) {
+__global__ void kernel_fractal(kernel_block<double> *blocks, kernel_params<double> *params) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     kernel_block<double> *block = &blocks[tid];
@@ -448,14 +450,16 @@ __global__ void kernel_mandelbrot_init(kernel_block<fixed_point<I, F>> *blocks, 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<uint32_t I, uint32_t F>
-__global__ void kernel_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params) {
-    const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
-    
-    kernel_block<fixed_point<I, F>> *block = &blocks[tid];
+__global__ void kernel_fractal(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params) {
+    const fixed_point<I, F> two(2ULL);
+
+    kernel_block<fixed_point<I, F>> *block = &blocks[threadIdx.x + blockIdx.x * blockDim.x];
+
     fixed_point<I, F> re_c(block->re_c_);
     fixed_point<I, F> im_c(block->im_c_);
     fixed_point<I, F> re(block->re_);
     fixed_point<I, F> im(block->im_);
+
     fixed_point<I, F> re_prod(re);
     fixed_point<I, F> im_prod(im);
     re_prod.multiply(re);
@@ -467,7 +471,7 @@ __global__ void kernel_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kerne
 
     if (escape == escape_limit) {
         for (uint64_t i = 0; i < escape_block; ++i) {
-            im.multiply(2ULL);
+            im.multiply(two);
             im.multiply(re);
             im.add(im_c);
 
