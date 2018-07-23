@@ -37,8 +37,13 @@ struct run_params {
 
     std::string re = "0.0";
     std::string im = "0.0";
+    std::string re_c = "";
+    std::string im_c = "";
     std::string scale = "1.0";
     std::string scale_factor = "0.5";
+
+    uint64_t escape_block = default_escape_block;
+    uint64_t escape_limit = default_escape_limit;
 
     bool follow_variance = false;
     bool random = false;
@@ -47,11 +52,9 @@ struct run_params {
     uint64_t count = 1;
     uint64_t skip = 0;
 
-    uint8_t colour_method = 0;
+    uint8_t colour_method = 2;
     std::string palette_file = "config\\palette_00.txt";
     std::vector <std::tuple<double, double, double>> palette;
-
-    uint64_t escape_limit = default_escape_limit;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -76,12 +79,12 @@ int main(int argc, char *argv[]) {
     auto usage = []() {
         std::cout
             << std::endl
-            << "Usage: cuda-fractal.exe -r|-re <re> -i|-im <im>" << std::endl
+            << "Usage: cuda-fractal.exe -r|-re <re> -i|-im <im> -rc|-rec <re> -ic|-imc <im>" << std::endl
             << "                        -s|-scale <scale> -sf|-scale-factor <scale-factor>" << std::endl
             << "                        -fv|-follow-variance -r|-random -reset" << std::endl
-            << "                        -c|-count <count> -el|-escape-limit <escape-limit>" << std::endl
+            << "                        -c|-count <count> -eb|-escape-block <escape-block> -el|-escape-limit <escape-limit>" << std::endl
             << "                        -cm|-colour-method <colour-method> -pf|-palette-file <palette-file.txt>" << std::endl
-            << "                        -fp|-fixed-point <I/F> -cuda <G/T>" << std::endl
+            << "                        -fp|-fixed-point <I/F> -cuda <groups/threads>" << std::endl
             << "                        -w|-width <width> -h|-height <height>" << std::endl
             << "                        -q|-quick -d|-detailed" << std::endl
             << std::endl;
@@ -105,6 +108,14 @@ int main(int argc, char *argv[]) {
             params.im = param;
             ++i;
         }
+        else if ((arg == "-rc") || (arg == "-rec")) {
+            params.re_c = param;
+            ++i;
+        }
+        else if ((arg == "-ic") || (arg == "-imc")) {
+            params.im_c = param;
+            ++i;
+        }
         else if ((arg == "-s") || (arg == "-scale")) {
             params.scale = param;
             ++i;
@@ -124,6 +135,10 @@ int main(int argc, char *argv[]) {
         }
         else if ((arg == "-c") || (arg == "-count")) {
             params.count = std::atoll(param.c_str());
+            ++i;
+        }
+        else if ((arg == "-eb") || (arg == "-escape-block")) {
+            params.escape_block = std::atoll(param.c_str());
             ++i;
         }
         else if ((arg == "-el") || (arg == "-escape-limit")) {
@@ -173,10 +188,17 @@ int main(int argc, char *argv[]) {
             }
             ++i;
         }
-        else if ((arg == "-d") || (arg == "-detailed")) {
+        else if (arg == "-hd") {
+            params.image_width = 1920;
+            params.image_height = 1080;
+        }
+        else if (arg == "-4k") {
+            params.image_width = 3840;
+            params.image_height = 2160;
+        }
+        else if (arg == "-5k") {
             params.image_width = 5120;
             params.image_height = 2880;
-            params.escape_limit = default_escape_limit;
         }
         else if ((arg == "-q") || (arg == "-quick")) {
             params.image_width = 320;
@@ -212,7 +234,9 @@ int main(int argc, char *argv[]) {
         case 2:
             switch (params.F) {
             case 2: run<2, 2>(png_writer, params); break;
+            case 3: run<2, 3>(png_writer, params); break;
             case 4: run<2, 4>(png_writer, params); break;
+            case 6: run<2, 6>(png_writer, params); break;
             case 8: run<2, 8>(png_writer, params); break;
             case 16: run<2, 16>(png_writer, params); break;
             case 24: run<2, 24>(png_writer, params); break;
@@ -290,7 +314,7 @@ void run<0, 0>(png &png_writer, run_params &params) {
     }
 
     f.colour(params.colour_method, params.palette);
-    f.limits(params.escape_limit);
+    f.limits(params.escape_limit, params.escape_block);
 
     double re{ 0 };
     double im{ 0 };
@@ -312,11 +336,14 @@ void run<0, 0>(png &png_writer, run_params &params) {
             im = std::uniform_real_distribution<>(-1.0, 1.0)(gen);
             scale = std::uniform_real_distribution<>(0.00005, 1.0)(gen);
         }
+        if ((params.re_c.size() != 0) && (params.im_c.size() != 0)) {
+            f.specify_julia(std::stod(params.re_c), std::stod(params.im_c));
+        }
     };
 
     reset();
 
-    for (uint64_t i = 0; i < params.count; ++i) {
+    for (uint32_t i = 0; i < params.count; ++i) {
         if (i >= params.skip) {
             std::cout << std::endl << "[+] Generating Fractal #" << i << std::endl;
             f.specify(re, im, scale);
@@ -354,14 +381,20 @@ void run(png &png_writer, run_params &params) {
         f.initialise(params.cuda_groups, params.cuda_threads);
     }
     f.colour(params.colour_method, params.palette);
-    f.limits(params.escape_limit);
+    f.limits(params.escape_limit, params.escape_block);
 
     fixed_point<I, F> re(params.re);
     fixed_point<I, F> im(params.im);
     fixed_point<I, F> scale(params.scale);
     fixed_point<I, F> scale_factor(params.scale_factor);
 
-    for (uint64_t i = 0; i < params.count; ++i) {
+    if ((params.re_c.size() != 0) && (params.im_c.size() != 0)) {
+        fixed_point<I, F> re_c(params.re_c);
+        fixed_point<I, F> im_c(params.im_c);
+        f.specify_julia(re_c, im_c);
+    }
+
+    for (uint32_t i = 0; i < params.count; ++i) {
         if (i >= params.skip) {
             std::cout << std::endl << "[+] Generating Fractal #" << i << std::endl;
             f.specify(re, im, scale);

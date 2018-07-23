@@ -1,6 +1,8 @@
 .vs
+.vscode
 **/bin/**/Debug
 **/bin/**/Release
+env
 **/obj/
 *.ilk
 *.iobj
@@ -10,3 +12,4 @@ vc*.pdb
 *.VC.opendb
 *.vcxproj.user
 *.png
+keys.json

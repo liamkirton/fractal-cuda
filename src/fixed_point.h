@@ -131,7 +131,7 @@ public:
         }
     }
 
-    inline __host__ __device__ void set(std::string s) {
+    inline __host__ void set(std::string s) {
         bool minus = s.find('-') == 0;
         if (minus) {
             s = s.substr(1);
