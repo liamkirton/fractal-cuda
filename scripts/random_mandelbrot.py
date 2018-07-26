@@ -6,7 +6,7 @@ keys = json.loads(open('keys.json', 'r').read())
 
 api = twitter.Api(**keys)
 
-for tweet in api.GetUserTimeline(screen_name='randommandelbot', count=256):
+for tweet in api.GetUserTimeline(screen_name='randommandelbot', count=8):
     coords = tweet.text.split(' ')
     re = coords[0]
     im = coords[2][:-1]

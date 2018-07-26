@@ -127,7 +127,9 @@ void fractal<double>::specify(const double &re, const double &im, const double &
 template<typename T>
 void fractal<T>::specify(const T &re, const T &im, const T &scale) {
     re_.set(re);
+    re_max_variance_.set(re);
     im_.set(im);
+    im_max_variance_.set(im);
     scale_.set(scale);
 }
 
@@ -152,7 +154,7 @@ void fractal<T>::specify_julia(const T &re_c, const T &im_c) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-bool fractal<T>::generate(bool trial) {
+bool fractal<T>::generate(bool trial, bool image) {
     resize(image_width_, image_height_);
 
     kernel_params<T> params_trial(trial_image_width_, trial_image_height_, escape_block_, escape_limit_, 0, re_, im_, scale_, re_c_, im_c_);
@@ -324,13 +326,18 @@ bool fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> 
 
     std::vector<std::tuple<double, int32_t, int32_t>> variances;
 
-    int32_t x_min = trial_image_width_ / 4;
-    int32_t x_max = 3 * trial_image_width_ / 4;
-    int32_t y_min = trial_image_height_ / 4;
-    int32_t y_max = 3 * trial_image_height_ / 4;
+    int32_t x_min = 0;
+    int32_t x_max = trial_image_width_;
+    int32_t y_min = 0;
+    int32_t y_max = trial_image_height_;
+
+    int32_t x_centre = trial_image_width_ / 2;
+    int32_t y_centre = trial_image_width_ / 2;
 
     double escape_max = static_cast<double>(1.0 + params.escape_range_max_ - params.escape_range_min_);
     constexpr uint32_t block_radius = 5;
+
+    bool mid_block_variance = false;
 
     for (int32_t y = y_min; y < y_max; ++y) {
         for (int32_t x = x_min; x < x_max; ++x) {
@@ -346,7 +353,9 @@ bool fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> 
                             double escape = static_cast<double>(block.escape_) - static_cast<double>(params.escape_range_min_);
                             double mu = 1.0 + escape - log2(0.5 * log(static_cast<double>(abs)) / log(default_escape_radius));
                             if (mu < 0.0) mu = 0.0;
-                            block_escapes[j] = mu / log(escape_max);
+
+                            double delta = max(1.0, sqrt(pow(x_centre - x, 2) + pow(y_centre - y, 2)));
+                            block_escapes[j] = mu / (delta + log(escape_max));
                         }
                     }
                 }
@@ -365,6 +374,10 @@ bool fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> 
             block_variance /= (block_radius * block_radius);
 
             variances.push_back(std::make_tuple(block_variance, x, y));
+
+            if ((x == trial_image_width_ / 2) && (y == trial_image_height_ / 2)) {
+                mid_block_variance = block_variance != 0;
+            }
         }
     }
 
@@ -378,7 +391,7 @@ bool fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> 
     auto max = variances.at(dist(gen));
     double max_variance = std::get<0>(max);
 
-    if (max_variance != 0.0) {
+    if (!mid_block_variance && (max_variance != 0.0)) {
         uint32_t max_variance_x = static_cast<uint32_t>(std::get<1>(max));
         uint32_t max_variance_y = static_cast<uint32_t>(std::get<2>(max));
         pixel_to_coord(max_variance_x, trial_image_width_, re_max_variance_, max_variance_y, trial_image_height_, im_max_variance_);
@@ -522,36 +535,31 @@ __global__ void kernel_iterate(kernel_block<fixed_point<I, F>> *blocks, kernel_p
 
     kernel_block<fixed_point<I, F>> *block = &blocks[threadIdx.x + blockIdx.x * blockDim.x];
 
-    fixed_point<I, F> re_c(block->re_c_);
-    fixed_point<I, F> im_c(block->im_c_);
     fixed_point<I, F> re(block->re_);
     fixed_point<I, F> im(block->im_);
-
-    fixed_point<I, F> re_prod(re);
-    fixed_point<I, F> im_prod(im);
-    re_prod.multiply(re);
-    im_prod.multiply(im);
 
     const uint64_t escape = block->escape_;
     const uint64_t escape_block = params->escape_block_;
     const uint64_t escape_limit = params->escape_limit_;
 
+    fixed_point<I, F> re_prod;
+    fixed_point<I, F> im_prod;
+    re.multiply(re, re_prod);
+    im.multiply(im, im_prod);
+
     if (escape == escape_limit) {
         for (uint64_t i = 0; i < escape_block; ++i) {
-            im.multiply(two);
             im.multiply(re);
-            im.add(im_c);
+            im.multiply(two);
+            im.add(block->im_c_);
 
             re.set(im_prod);
             re.negate();
             re.add(re_prod);
-            re.add(re_c);
+            re.add(block->re_c_);
 
-            re_prod.set(re);
-            re_prod.multiply(re);
-
-            im_prod.set(im);
-            im_prod.multiply(im);
+            re.multiply(re, re_prod);
+            im.multiply(im, im_prod);
 
             if ((static_cast<double>(re_prod) + static_cast<double>(im_prod)) >= default_escape_radius_square) {
                 block->escape_ = i + params->escape_i_ * escape_block;

@@ -152,7 +152,7 @@ public:
     void specify(const T &re, const T &im, const T &scale);
     void specify_julia(const T &re_c, const T &im_c);
 
-    bool generate(bool trial = true);
+    bool generate(bool trial = true, bool image = true);
 
     uint32_t image_width() {
         return image_width_;

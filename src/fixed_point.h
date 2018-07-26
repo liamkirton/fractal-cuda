@@ -35,6 +35,10 @@ public:
         return get_double();
     }
 
+    inline __host__ __device__ operator int64_t() {
+        return get_integer();
+    }
+
     inline __host__ __device__ uint32_t bit_get(const uint64_t i) const {
         if (i < (I + F) * 32) {
             return (data[i / 32] & (1 << (i % 32))) >> (i % 32);
@@ -204,7 +208,7 @@ public:
 
     inline __host__ __device__ void add(const uint64_t v) {
         uint64_t carry = 0;
-        for (uint32_t i = 0; i < I; ++i) {
+        for (uint32_t i = 0; i < ((I < 3) ? I : 3); ++i) {
             uint64_t sum = static_cast<uint64_t>(data[F + i]) + ((i < 2) ? static_cast<uint64_t>(reinterpret_cast<const uint32_t *>(&v)[i]) : 0) + carry;
             data[F + i] = (sum & 0xffffffff);
             carry = (sum >> 32);
@@ -223,8 +227,17 @@ public:
     }
 
     inline __host__ __device__ void multiply(const fixed_point<I, F> &b) {
-        fixed_point<I + F, F> accum;
         uint32_t result[I + F];
+        multiply(b, result);
+        memcpy(&data, &result, sizeof(data));
+    }
+
+    inline __host__ __device__ void multiply(const fixed_point<I, F> &b, fixed_point<I, F> &result) {
+        multiply(b, result.data);
+    }
+
+    inline __host__ __device__ void multiply(const fixed_point<I, F> &b, uint32_t(&result)[I + F]) {
+        fixed_point<I + F, 0> accum;
 
         // CUDA Compiler Bug (22/07/2018)
         volatile const fixed_point<I, F> *a_p = this;
@@ -243,19 +256,15 @@ public:
                 );
             }
 
-            // Combine: result.shiftr(32 * F); set(result);
+            // Combine: result.shiftr(32 * F); set(result); accum.shiftr_32();
             if (i >= F) {
-                result[i - F] = accum.data[F];
+                result[i - F] = accum.data[0];
             }
-
-            // Combine: accum.shiftr_32(); accum.zero_fractional();
-            for (int32_t i = 0; i < I + 2 * F - 1; ++i) {
-                accum.data[i] = (i < F) ? 0 : accum.data[i + 1];
+            for (uint32_t j = 0; j < I + F - 1; ++j) {
+                accum.data[j] = accum.data[j + 1];
             }
-            accum.data[I + 2 * F - 1] = 0;
+            accum.data[I + F - 1] = 0;
         }
-
-        memcpy(&data, &result, sizeof(data));
     }
 
     inline __host__ __device__ void multiply(const uint64_t &v) {
@@ -269,9 +278,10 @@ public:
     }
 
     inline __host__ __device__ void negate() {
-        uint64_t carry = 0;
+        uint64_t carry = 1;
         for (uint32_t i = 0; i < I + F; ++i) {
-            uint64_t sum = static_cast<uint64_t>(~data[i]) + ((i == 0) ? 1 : 0) + carry;
+            const uint32_t neg = ~data[i];
+            uint64_t sum = static_cast<uint64_t>(neg) + carry;
             data[i] = (sum & 0xffffffff);
             carry = (sum >> 32);
         }
@@ -280,8 +290,9 @@ public:
     inline __host__ __device__ void shiftl(const uint64_t v) {
         if ((v % 32) == 0) {
             uint64_t offset = v / 32;
-            memmove(&data[offset], &data, sizeof(uint32_t) * (I + F - offset));
-            memset(&data, 0, sizeof(uint32_t) * offset);
+            for (uint32_t i = 0; i < I + F; ++i) {
+                data[i] = (i < offset) ? 0 : data[i - offset];
+            }
         }
         else {
             for (int32_t i = I + F - 1; i >= 0; --i) {
@@ -302,7 +313,7 @@ public:
     inline __host__ __device__ void shiftr(const uint64_t v) {
         if ((v % 32) == 0) {
             uint64_t offset = v / 32;
-            for (int32_t i = 0; i <= I + F - offset; ++i) {
+            for (uint32_t i = 0; i <= I + F - offset; ++i) {
                 data[i] = data[i + offset];
             }
             memset(&data[I + F - offset], 0, sizeof(uint32_t) * offset);
