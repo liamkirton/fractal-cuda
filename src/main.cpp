@@ -174,7 +174,7 @@ int main(int argc, char *argv[]) {
         else if (((arg == "-fp") || (arg == "-fixed-point")) && (param.find("/") != std::string::npos)) {
             params.I = std::atoll(param.substr(0, param.find("/")).c_str());
             params.F = std::atoll(param.substr(param.find("/") + 1).c_str());
-            if ((params.I == 0) || (params.I > 4) || (params.F == 0) || (params.F > 128)) {
+            if ((params.I == 0) || (params.I > 4) || (params.F == 0) || (params.F > 1024)) {
                 return usage();
             }
             ++i;
@@ -241,6 +241,9 @@ int main(int argc, char *argv[]) {
             case 16: run<2, 16>(png_writer, params); break;
             case 24: run<2, 24>(png_writer, params); break;
             case 32: run<2, 32>(png_writer, params); break;
+            case 64: run<2, 64>(png_writer, params); break;
+            case 128: run<2, 128>(png_writer, params); break;
+            case 256: run<2, 256>(png_writer, params); break;
             default: return usage();
             }
             break;

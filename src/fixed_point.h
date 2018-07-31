@@ -226,14 +226,45 @@ public:
         }
     }
 
-    inline __host__ __device__ void multiply(const fixed_point<I, F> &b) {
+    template<typename T>
+    inline __host__ __device__ void multiply(const T &b) {
         uint32_t result[I + F];
         multiply(b, result);
         memcpy(&data, &result, sizeof(data));
     }
 
-    inline __host__ __device__ void multiply(const fixed_point<I, F> &b, fixed_point<I, F> &result) {
+    template<typename T>
+    inline __host__ __device__ void multiply(const T &b, fixed_point<I, F> &result) {
         multiply(b, result.data);
+    }
+
+    inline __host__ __device__ void multiply(const uint64_t &b, uint32_t(&result)[I + F]) {
+        fixed_point<I + F, 0> accum;
+
+        volatile const fixed_point<I, F> *a_p = this; // CUDA Compiler Bug (22/07/2018)
+        uint32_t a_ext = (data[(I + F) - 1] & 0x80000000) ? 0xffffffff : 0;
+
+        for (uint32_t i = F; i < I + 2 * F; ++i) {
+            for (uint32_t j = 0; j <= i; ++j) {
+                const uint32_t l_ix = j;
+                const uint32_t r_ix = i - j;
+                if ((r_ix == F) || (r_ix == F + 1)) {
+                    accum.add(
+                        static_cast<uint64_t>((l_ix < (I + F)) ? a_p->data[l_ix] : a_ext) *
+                        static_cast<uint64_t>((r_ix == F) ? (b & 0xffffffff) : (b >> 32))
+                    );
+                }
+            }
+
+            // Combine: result.shiftr(32 * F); set(result); accum.shiftr_32();
+            if (i >= F) {
+                result[i - F] = accum.data[0];
+            }
+            for (uint32_t j = 0; j < I + F - 1; ++j) {
+                accum.data[j] = accum.data[j + 1];
+            }
+            accum.data[I + F - 1] = 0;
+        }
     }
 
     inline __host__ __device__ void multiply(const fixed_point<I, F> &b, uint32_t(&result)[I + F]) {
@@ -265,16 +296,6 @@ public:
             }
             accum.data[I + F - 1] = 0;
         }
-    }
-
-    inline __host__ __device__ void multiply(const uint64_t &v) {
-        fixed_point<I, F> t(v);
-        multiply(t);
-    }
-
-    inline __host__ __device__ void multiply(const double &v) {
-        fixed_point<I, F> t(v);
-        multiply(t);
     }
 
     inline __host__ __device__ void negate() {

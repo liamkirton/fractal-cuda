@@ -27,8 +27,11 @@ template class fractal<fixed_point<2, 4>>;
 template class fractal<fixed_point<2, 6>>;
 template class fractal<fixed_point<2, 8>>;
 template class fractal<fixed_point<2, 16>>;
-template class fractal<fixed_point<2, 24>>; 
+template class fractal<fixed_point<2, 24>>;
 template class fractal<fixed_point<2, 32>>;
+template class fractal<fixed_point<2, 64>>;
+template class fractal<fixed_point<2, 128>>;
+template class fractal<fixed_point<2, 256>>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -531,8 +534,6 @@ __global__ void kernel_init_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, 
 
 template<uint32_t I, uint32_t F>
 __global__ void kernel_iterate(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params) {
-    const fixed_point<I, F> two(2ULL);
-
     kernel_block<fixed_point<I, F>> *block = &blocks[threadIdx.x + blockIdx.x * blockDim.x];
 
     fixed_point<I, F> re(block->re_);
@@ -550,7 +551,7 @@ __global__ void kernel_iterate(kernel_block<fixed_point<I, F>> *blocks, kernel_p
     if (escape == escape_limit) {
         for (uint64_t i = 0; i < escape_block; ++i) {
             im.multiply(re);
-            im.multiply(two);
+            im.multiply(2ULL);
             im.add(block->im_c_);
 
             re.set(im_prod);
