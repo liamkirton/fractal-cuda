@@ -39,6 +39,10 @@ public:
         return get_integer();
     }
 
+    inline __host__ __device__ operator std::string() {
+        return get_string();
+    }
+
     inline __host__ __device__ uint32_t bit_get(const uint64_t i) const {
         if (i < (I + F) * 32) {
             return (data[i / 32] & (1 << (i % 32))) >> (i % 32);
@@ -70,6 +74,54 @@ public:
             return static_cast<const int64_t>(*reinterpret_cast<const int32_t *>(&data[F]));
         }
         return *reinterpret_cast<const int64_t *>(&data[F]);
+    }
+
+    inline __host__ std::string get_string() const {
+        fixed_point<I, F> t(*this);
+        bool negative = t.negative();
+        if (negative) {
+            t.negate();
+        }
+
+        fixed_point<I, F> integer_part(t);
+        fixed_point<I, F> decimal_part(t);
+        integer_part.zero_decimal();
+        decimal_part.zero_integer();
+
+        std::string integer;
+        while (!integer_part.is_zero()) {
+            uint64_t v = (integer_part.get_integer() % 10);
+            integer += static_cast<char>('0' + v);
+
+            fixed_point<I, F> sub_v(v);
+            sub_v.negate();
+            integer_part.add(sub_v);
+            integer_part.multiply(0.1);
+        }
+        std::reverse(integer.begin(), integer.end());
+
+        std::string decimal;
+        for (uint32_t i = 0; i < static_cast<uint32_t>(32 * F * log(2.0) / log(10.0)); ++i) {
+            decimal_part.multiply(10ULL);
+            decimal += static_cast<char>('0' + (decimal_part.get_integer() % 10));
+            decimal_part.zero_integer();
+        }
+
+        std::string result;
+        if (negative) {
+            result += "-";
+        }
+        result += integer + "." + decimal;
+        return result;
+    }
+
+    inline __host__ __device__ bool is_zero() const {
+        for (uint32_t i = F; i < I + F; ++i) {
+            if (data[i] != 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     inline __host__ __device__ bool negative() const {
@@ -149,6 +201,7 @@ public:
         }
 
         fixed_point<I, F> tens(1);
+        fixed_point<I, F> tenths(0.1);
 
         fixed_point<I, F> integer_part;
         for (uint64_t i = 0; i < integer.length(); ++i) {
@@ -159,17 +212,29 @@ public:
             integer_part.add(t);
         }
 
+        tens.set(10);
+
         fixed_point<I, F> decimal_part;
         for (uint64_t i = 0; i < decimal.length(); ++i) {
-            uint64_t v = (decimal.at(i) - '0');
+            fixed_point<F, F> v(decimal.at(i) - '0');
             fixed_point<I, F> t;
             for (uint64_t j = 0; j < 32 * F; ++j) {
-                v *= 2;
-                uint64_t bit_value = v / static_cast<uint64_t>(pow(10, i + 1));
-                uint64_t rem_value = v % static_cast<uint64_t>(pow(10, i + 1));
-                t.bit_set(32 * F - (j + 1), bit_value);
-                v = rem_value;
+                fixed_point<F, F> v_div;
+                v.multiply(2ULL);
+                v.multiply(tenths, v_div);
+
+                uint64_t bit_value = v_div.get_integer();
+                if (bit_value != 0) {
+                    t.bit_set(32 * F - (j + 1), bit_value);
+                }
+
+                v_div.set(bit_value);
+                v_div.multiply(tens);
+                v_div.negate();
+                v.add(v_div);
             }
+            tens.multiply(10ULL);
+            tenths.multiply(0.1);
             decimal_part.add(t);
         }
 
@@ -181,7 +246,7 @@ public:
         }
     }
 
-    inline __host__ __device__ void zero_fractional() {
+    inline __host__ __device__ void zero_decimal() {
         memset(&data, 0, F * sizeof(uint32_t));
     }
 
@@ -236,6 +301,11 @@ public:
     template<typename T>
     inline __host__ __device__ void multiply(const T &b, fixed_point<I, F> &result) {
         multiply(b, result.data);
+    }
+
+    inline __host__ __device__ void multiply(const double &b, uint32_t(&result)[I + F]) {
+        fixed_point<I, F> t(b);
+        multiply(t, result);
     }
 
     inline __host__ __device__ void multiply(const uint64_t &b, uint32_t(&result)[I + F]) {
@@ -361,4 +431,3 @@ public:
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
- 

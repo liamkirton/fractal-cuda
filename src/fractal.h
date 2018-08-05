@@ -60,11 +60,10 @@ struct kernel_params {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-constexpr double static_scale = 1.5;
-constexpr double im_min = 1.0 * static_scale;
-constexpr double im_max = -1.0 * static_scale;
-constexpr double re_min = -2.0 * static_scale;
-constexpr double re_max = 1.0 * static_scale;
+constexpr double im_min = 1.5;
+constexpr double im_max = -1.5;
+constexpr double re_min = -3.0;
+constexpr double re_max = 3.0;
 
 #ifdef _DEBUG
     constexpr uint32_t default_cuda_groups = 64;
@@ -84,7 +83,7 @@ constexpr double re_max = 1.0 * static_scale;
 
     constexpr uint32_t default_escape_block = 65536;
     constexpr uint32_t default_escape_limit = 1048576;
-    constexpr double default_escape_radius = 2.0;
+    constexpr double default_escape_radius = 16.0;
 
     constexpr uint32_t default_image_width = 1024;
     constexpr uint32_t default_image_height = 768;

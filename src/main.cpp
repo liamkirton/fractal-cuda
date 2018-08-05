@@ -35,7 +35,7 @@ struct run_params {
     uint64_t image_width = default_image_width;
     uint64_t image_height = default_image_height;
 
-    std::string re = "0.0";
+    std::string re = "-0.5";
     std::string im = "0.0";
     std::string re_c = "";
     std::string im_c = "";
@@ -234,16 +234,16 @@ int main(int argc, char *argv[]) {
         case 2:
             switch (params.F) {
             case 2: run<2, 2>(png_writer, params); break;
-            case 3: run<2, 3>(png_writer, params); break;
+            //case 3: run<2, 3>(png_writer, params); break;
             case 4: run<2, 4>(png_writer, params); break;
-            case 6: run<2, 6>(png_writer, params); break;
+            //case 6: run<2, 6>(png_writer, params); break;
             case 8: run<2, 8>(png_writer, params); break;
             case 16: run<2, 16>(png_writer, params); break;
-            case 24: run<2, 24>(png_writer, params); break;
-            case 32: run<2, 32>(png_writer, params); break;
-            case 64: run<2, 64>(png_writer, params); break;
-            case 128: run<2, 128>(png_writer, params); break;
-            case 256: run<2, 256>(png_writer, params); break;
+            //case 24: run<2, 24>(png_writer, params); break;
+            //case 32: run<2, 32>(png_writer, params); break;
+            //case 64: run<2, 64>(png_writer, params); break;
+            //case 128: run<2, 128>(png_writer, params); break;
+            //case 256: run<2, 256>(png_writer, params); break;
             default: return usage();
             }
             break;

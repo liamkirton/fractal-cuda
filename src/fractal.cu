@@ -22,16 +22,16 @@ template class fractal<double>;
 template class fractal<fixed_point<1, 1>>; 
 template class fractal<fixed_point<1, 2>>;
 template class fractal<fixed_point<2, 2>>;
-template class fractal<fixed_point<2, 3>>;
+//template class fractal<fixed_point<2, 3>>;
 template class fractal<fixed_point<2, 4>>;
-template class fractal<fixed_point<2, 6>>;
+//template class fractal<fixed_point<2, 6>>;
 template class fractal<fixed_point<2, 8>>;
 template class fractal<fixed_point<2, 16>>;
-template class fractal<fixed_point<2, 24>>;
-template class fractal<fixed_point<2, 32>>;
-template class fractal<fixed_point<2, 64>>;
-template class fractal<fixed_point<2, 128>>;
-template class fractal<fixed_point<2, 256>>;
+//template class fractal<fixed_point<2, 24>>;
+//template class fractal<fixed_point<2, 32>>;
+//template class fractal<fixed_point<2, 64>>;
+//template class fractal<fixed_point<2, 128>>;
+//template class fractal<fixed_point<2, 256>>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -61,6 +61,8 @@ bool fractal<T>::initialise(uint32_t cuda_groups, uint32_t cuda_threads) {
         trial_image_height_ = cuda_groups;
         trial_image_width_ = cuda_threads;
     }
+
+    trial_image_width_ = trial_image_height_ = static_cast<uint32_t>(floor(sqrt(trial_image_width_ * trial_image_height_)));
 
     uninitialise();
 
@@ -415,8 +417,8 @@ bool fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> 
 __global__ void kernel_init_julia(kernel_block<double> *blocks, kernel_params<double> *params) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-    const int pixel_x = (params->image_chunk_ + tid) % params->image_width_;
-    const int pixel_y = (params->image_chunk_ + tid) / params->image_width_;
+    const double pixel_x = (params->image_chunk_ + tid) % params->image_width_;
+    const double pixel_y = (params->image_chunk_ + tid) / params->image_width_;
 
     const double re_c = params->re_ + (re_min + pixel_x * (re_max - re_min) / params->image_width_) * params->scale_;
     const double im_c = params->im_ + (im_max - pixel_y * (im_max - im_min) / params->image_height_) * params->scale_;
@@ -434,8 +436,8 @@ __global__ void kernel_init_julia(kernel_block<double> *blocks, kernel_params<do
 __global__ void kernel_init_mandelbrot(kernel_block<double> *blocks, kernel_params<double> *params) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-    const int pixel_x = (params->image_chunk_ + tid) % params->image_width_;
-    const int pixel_y = (params->image_chunk_ + tid) / params->image_width_;
+    const double pixel_x = (params->image_chunk_ + tid) % params->image_width_;
+    const double pixel_y = (params->image_chunk_ + tid) / params->image_width_;
 
     const double re_c = params->re_ + (re_min + pixel_x * (re_max - re_min) / params->image_width_) * params->scale_;
     const double im_c = params->im_ + (im_max - pixel_y * (im_max - im_min) / params->image_height_) * params->scale_;
@@ -488,8 +490,8 @@ template<uint32_t I, uint32_t F>
 __global__ void kernel_init_julia(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-    const int pixel_x = (params->image_chunk_ + tid) % params->image_width_;
-    const int pixel_y = (params->image_chunk_ + tid) / params->image_width_;
+    const double pixel_x = (params->image_chunk_ + tid) % params->image_width_;
+    const double pixel_y = (params->image_chunk_ + tid) / params->image_width_;
 
     fixed_point<I, F> re_c(re_min + pixel_x * (re_max - re_min) / params->image_width_);
     fixed_point<I, F> im_c(im_max - pixel_y * (im_max - im_min) / params->image_height_);
@@ -512,8 +514,8 @@ template<uint32_t I, uint32_t F>
 __global__ void kernel_init_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-    const int pixel_x = (params->image_chunk_ + tid) % params->image_width_;
-    const int pixel_y = (params->image_chunk_ + tid) / params->image_width_;
+    const double pixel_x = (params->image_chunk_ + tid) % params->image_width_;
+    const double pixel_y = (params->image_chunk_ + tid) / params->image_width_;
 
     fixed_point<I, F> re_c(re_min + pixel_x * (re_max - re_min) / params->image_width_);
     fixed_point<I, F> im_c(im_max - pixel_y * (im_max - im_min) / params->image_height_);
