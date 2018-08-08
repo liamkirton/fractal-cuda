@@ -48,6 +48,7 @@ struct run_params {
     bool follow_variance = false;
     bool random = false;
     bool reset = false;
+    bool trial = true;
 
     uint64_t count = 1;
     uint64_t skip = 0;
@@ -132,6 +133,9 @@ int main(int argc, char *argv[]) {
         }
         else if (arg == "-reset") {
             params.reset = true;
+        }
+        else if ((arg == "-nt") || (arg == "-no-trial")) {
+            params.trial = false;
         }
         else if ((arg == "-c") || (arg == "-count")) {
             params.count = std::atoll(param.c_str());
@@ -352,7 +356,7 @@ void run<0, 0>(png &png_writer, run_params &params) {
             f.specify(re, im, scale);
 
             timer gen_timer;
-            if (f.generate()) {
+            if (f.generate(params.trial)) {
                 gen_timer.stop();
                 gen_timer.print();
 
@@ -403,7 +407,7 @@ void run(png &png_writer, run_params &params) {
             f.specify(re, im, scale);
 
             timer gen_timer;
-            if (!f.generate()) {
+            if (!f.generate(params.trial)) {
                 break;
             }
             gen_timer.stop();
