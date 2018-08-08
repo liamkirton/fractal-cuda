@@ -6,15 +6,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="src\fractal.cu">
-      <Filter>src</Filter>
-    </CudaCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="src\fractal.h">
+    <ClInclude Include="src\fixed_point.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="src\fixed_point.h">
+    <ClInclude Include="src\fractal.h">
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="src\png.h">
@@ -23,6 +18,11 @@
     <ClInclude Include="src\timer.h">
       <Filter>src</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="src\fractal.cu">
+      <Filter>src</Filter>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">

@@ -10,7 +10,7 @@ public:
     ~png();
 
     template<typename T>
-    void png::write(fractal<T> &f, uint64_t ix = 0) {
+    void write(fractal<T> &f, uint64_t ix = 0) {
         std::stringstream suffix;
         suffix << std::setfill('0')
             << "ix=" << ix << "_"
