@@ -75,8 +75,6 @@ constexpr double re_max = 3.0;
 
     constexpr uint32_t default_image_width = 640;
     constexpr uint32_t default_image_height = 480;
-    constexpr uint32_t default_trial_image_width = default_cuda_threads;
-    constexpr uint32_t default_trial_image_height = default_cuda_groups;
 #else
     constexpr uint32_t default_cuda_groups = 256;
     constexpr uint32_t default_cuda_threads = 1024;
@@ -87,8 +85,6 @@ constexpr double re_max = 3.0;
 
     constexpr uint32_t default_image_width = 1024;
     constexpr uint32_t default_image_height = 768;
-    constexpr uint32_t default_trial_image_width = default_cuda_threads;
-    constexpr uint32_t default_trial_image_height = default_cuda_groups;
 #endif
 
 constexpr double default_escape_radius_square = default_escape_radius * default_escape_radius;
@@ -110,7 +106,7 @@ public:
     fractal(const uint32_t image_width, const uint32_t image_height, uint64_t escape_block, uint64_t escape_limit, uint32_t cuda_groups, uint32_t cuda_threads) :
             image_(nullptr),
             image_width_(image_width), image_height_(image_height),
-            trial_image_width_(default_trial_image_width), trial_image_height_(default_trial_image_height),
+            trial_image_width_(cuda_threads), trial_image_height_(cuda_groups),
             cuda_groups_(cuda_groups), cuda_threads_(cuda_threads),
             escape_block_(escape_block), escape_limit_(escape_limit),
             colour_method_(0),

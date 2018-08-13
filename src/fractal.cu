@@ -26,6 +26,7 @@ template class fractal<fixed_point<2, 2>>;
 template class fractal<fixed_point<2, 4>>;
 //template class fractal<fixed_point<2, 6>>;
 template class fractal<fixed_point<2, 8>>;
+template class fractal<fixed_point<2, 12>>;
 template class fractal<fixed_point<2, 16>>;
 //template class fractal<fixed_point<2, 24>>;
 //template class fractal<fixed_point<2, 32>>;
@@ -57,12 +58,7 @@ bool fractal<T>::initialise(uint32_t cuda_groups, uint32_t cuda_threads) {
     cuda_groups_ = cuda_groups;
     cuda_threads_ = cuda_threads;
 
-    if (trial_image_width_ * trial_image_height_ > cuda_groups_ * cuda_threads_) {
-        trial_image_height_ = cuda_groups;
-        trial_image_width_ = cuda_threads;
-    }
-
-    trial_image_width_ = trial_image_height_ = static_cast<uint32_t>(floor(sqrt(trial_image_width_ * trial_image_height_)));
+    trial_image_width_ = trial_image_height_ = static_cast<uint32_t>(floor(sqrt(cuda_groups * cuda_threads)));
 
     uninitialise();
 
@@ -169,7 +165,9 @@ bool fractal<T>::generate(bool trial, bool image) {
         return false;
     }
 
-    std::cout << "  [+] Re: " << std::setprecision(5) << static_cast<double>(re_) << ", Im: " << static_cast<double>(im_) << ", Scale: " << static_cast<double>(scale_) << std::endl;
+    std::cout << "  [+] Re: " << re_ << std::endl
+        << "  [+] Im: " << im_ << std::endl
+        << "  [+] Sc: " << scale_ << std::endl;
 
     if (trial) {
         std::cout << "  [+] Trial " << trial_image_width_ << "x" << trial_image_height_ << std::endl;

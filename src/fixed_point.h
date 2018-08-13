@@ -39,7 +39,7 @@ public:
         return get_integer();
     }
 
-    inline __host__ __device__ operator std::string() {
+    inline __host__ operator std::string() const {
         return get_string();
     }
 
@@ -89,6 +89,9 @@ public:
         decimal_part.zero_integer();
 
         std::string integer;
+        if (integer_part.is_zero()) {
+            integer = "0";
+        }
         while (!integer_part.is_zero()) {
             uint64_t v = (integer_part.get_integer() % 10);
             integer += static_cast<char>('0' + v);
@@ -188,24 +191,50 @@ public:
     }
 
     inline __host__ void set(std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+
+        auto exp_delim = s.find('e');
+        int exp_val = 0;
+        if (exp_delim != std::string::npos) {
+            exp_val = std::atoi(s.substr(exp_delim + 1).c_str());
+            s = s.substr(0, exp_delim);
+        }
+
         bool minus = s.find('-') == 0;
         if (minus) {
             s = s.substr(1);
         }
 
         auto dot_index = s.find('.');
+        if (dot_index == std::string::npos) {
+            dot_index = s.length();
+        }
+        s.erase(std::remove(s.begin(), s.end(), '.'), s.end());
+
+        if (exp_val != 0) {
+            int64_t dot_offset = static_cast<int64_t>(dot_index) + exp_val;
+            while (dot_offset > static_cast<int64_t>(s.length())) {
+                s += '0';
+            }
+            while (dot_offset <= 0) {
+                s = '0' + s;
+                dot_offset++;
+            }
+            dot_index = dot_offset;
+        }
+
         std::string integer = s.substr(0, dot_index);
         std::string decimal = "";
         if (dot_index != std::string::npos) {
-            decimal = s.substr(dot_index + 1);
+            decimal = s.substr(dot_index);
         }
 
-        fixed_point<I, F> tens(1);
-        fixed_point<I, F> tenths(0.1);
+        fixed_point<I + F, I + F> tens(1);
+        fixed_point<I + F, I + F> tenths(0.1);
 
-        fixed_point<I, F> integer_part;
+        fixed_point<I + F, I + F> integer_part;
         for (uint64_t i = 0; i < integer.length(); ++i) {
-            fixed_point<I, F> t;
+            fixed_point<I + F, I + F> t;
             t.set(integer.at((integer.length() - 1) - i) - '0');
             t.multiply(tens);
             tens.multiply(10ULL);
@@ -214,21 +243,21 @@ public:
 
         tens.set(10);
 
-        fixed_point<I, F> decimal_part;
+        fixed_point<I + F, I + F> decimal_part;
         for (uint64_t i = 0; i < decimal.length(); ++i) {
-            fixed_point<F, F> v(decimal.at(i) - '0');
-            fixed_point<I, F> t;
-            for (uint64_t j = 0; j < 32 * F; ++j) {
-                fixed_point<F, F> v_div;
+            fixed_point<I + F, I + F> v(decimal.at(i) - '0');
+            fixed_point<I + F, I + F> t;
+            for (uint64_t j = 0; j < 32 * (I + F); ++j) {
+                fixed_point<I + F, I + F> v_div;
                 v.multiply(2ULL);
                 v.multiply(tenths, v_div);
 
                 uint64_t bit_value = v_div.get_integer();
                 if (bit_value != 0) {
-                    t.bit_set(32 * F - (j + 1), bit_value);
+                    t.bit_set(32 * (I + F) - (j + 1), bit_value);
                 }
 
-                v_div.set(bit_value);
+                v_div.zero_decimal();
                 v_div.multiply(tens);
                 v_div.negate();
                 v.add(v_div);
@@ -238,8 +267,8 @@ public:
             decimal_part.add(t);
         }
 
-        set(integer_part);
-        add(decimal_part);
+        std::memcpy(&data[0], &decimal_part.data[I], sizeof(uint32_t) * F);
+        std::memcpy(&data[F], &integer_part.data[I + F], sizeof(uint32_t) * I);
 
         if (minus) {
             negate();
@@ -429,5 +458,13 @@ public:
 public:
     uint32_t data[I + F];
 };
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<uint32_t I, uint32_t F>
+std::ostream& operator<<(std::ostream &o, const fixed_point<I, F> &v) {
+    o << static_cast<std::string>(v);
+    return o;
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

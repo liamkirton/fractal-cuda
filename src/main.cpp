@@ -204,6 +204,14 @@ int main(int argc, char *argv[]) {
             params.image_width = 5120;
             params.image_height = 2880;
         }
+        else if (arg == "-8k") {
+            params.image_width = 7680;
+            params.image_height = 4320;
+        }
+        else if (arg == "-16k") {
+            params.image_width = 15360;
+            params.image_height = 8640;
+        }
         else if ((arg == "-q") || (arg == "-quick")) {
             params.image_width = 320;
             params.image_height = 240;
@@ -242,6 +250,7 @@ int main(int argc, char *argv[]) {
             case 4: run<2, 4>(png_writer, params); break;
             //case 6: run<2, 6>(png_writer, params); break;
             case 8: run<2, 8>(png_writer, params); break;
+            case 12: run<2, 12>(png_writer, params); break;
             case 16: run<2, 16>(png_writer, params); break;
             //case 24: run<2, 24>(png_writer, params); break;
             //case 32: run<2, 32>(png_writer, params); break;
