@@ -241,6 +241,8 @@ template<> bool run_step<0, 0>(YAML::Node &run_config, uint32_t ix, std::vector<
     f.colour(run_config["colour_method"].as<uint32_t>(), palette);
     f.limits(run_config["escape_limit"].as<uint32_t>(), run_config["escape_block"].as<uint32_t>());
 
+    std::cout << ", Type: double" << std::endl;
+
     double re = run_config["re"].as<double>();
     double im = run_config["im"].as<double>();
     double scale = run_config["scale"].as<double>();
@@ -249,12 +251,21 @@ template<> bool run_step<0, 0>(YAML::Node &run_config, uint32_t ix, std::vector<
     for (uint32_t i = 0; i < ix; ++i) {
         scale *= scale_factor;
     }
-
-    std::cout << ", Type: double" << std::endl;
     f.specify(re, im, scale);
 
+    auto re_c = run_config["re_c"].as<std::string>();
+    auto im_c = run_config["im_c"].as<std::string>();
+
+    if (re_c.size() > 0) {
+        std::cout << "  [+] Julia: " << re_c << ", " << im_c << std::endl;
+        f.specify_julia(std::stod(re_c), std::stod(im_c));
+    }
+    else {
+        std::cout << "  [+] Mandelbrot" << std::endl;
+    }
+
     timer gen_timer;
-    if (f.generate(run_config["trial"].as<bool>(), true)) {
+    if (f.generate(run_config["trial"].as<bool>())) {
         gen_timer.stop();
         gen_timer.print();
         png_writer.write(f, ix);
@@ -274,6 +285,8 @@ template<uint32_t I, uint32_t F> bool run_step(YAML::Node &run_config, uint32_t 
     f.colour(run_config["colour_method"].as<uint32_t>(), palette);
     f.limits(run_config["escape_limit"].as<uint32_t>(), run_config["escape_block"].as<uint32_t>());
 
+    std::cout << ", Type: fixed_point<" << I << ", " << F << ">" << std::endl;
+
     fixed_point<I, F> re(run_config["re"].as<std::string>());
     fixed_point<I, F> im(run_config["im"].as<std::string>());
     fixed_point<I, F> scale(run_config["scale"].as<std::string>());
@@ -282,12 +295,21 @@ template<uint32_t I, uint32_t F> bool run_step(YAML::Node &run_config, uint32_t 
     for (uint32_t i = 0; i < ix; ++i) {
         scale.multiply(scale_factor);
     }
-
-    std::cout << ", Type: fixed_point<" << I << ", " << F << ">" << std::endl;
     f.specify(re, im, scale);
 
+    auto re_c = run_config["re_c"].as<std::string>();
+    auto im_c = run_config["im_c"].as<std::string>();
+
+    if (re_c.size() > 0) {
+        std::cout << "  [+] Julia: " << re_c << ", " << im_c << std::endl;
+        f.specify_julia(re_c, im_c);
+    }
+    else {
+        std::cout << "  [+] Mandelbrot" << std::endl;
+    }
+
     timer gen_timer;
-    if (f.generate(run_config["trial"].as<bool>(), true)) {
+    if (f.generate(run_config["trial"].as<bool>())) {
         gen_timer.stop();
         gen_timer.print();
         png_writer.write(f, ix);

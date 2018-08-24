@@ -599,7 +599,9 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
         default:
         case 0:
         case 1:
+            hue = 0.0;
             sat = 0.0;
+            val = 1.0;
             break;
         case 2:
         case 3:
@@ -620,6 +622,8 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
         case 4:
         case 5:
             hue = 360.0 * log(mu) / log(escape_max);
+            sat = 0.95;
+            val = 0.95;
             break;
         case 6:
         case 7:
@@ -627,6 +631,8 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
                 mu = 2.71828182846;
             }
             hue = 360.0 * log(escape_max) / log(mu);
+            sat = 0.95;
+            val = 0.95;
             break;
         }
 
