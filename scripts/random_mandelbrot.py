@@ -1,25 +1,27 @@
 import json
+import os
 import subprocess
 import twitter
 
-keys = json.loads(open('keys.json', 'r').read())
+prev_cwd = os.getcwd()
+os.chdir(os.path.join(os.path.split(__file__)[0], '..'))
 
-api = twitter.Api(**keys)
+try:
+    api = twitter.Api(**json.loads(open('scripts/keys.json', 'r').read()))
+    for tweet in api.GetUserTimeline(screen_name='randommandelbot', count=8):
+        coords = tweet.text.split(' ')
+        re = coords[0].replace('e+00', '')
+        im = coords[2][:-1].replace('e+00', '')
+        scale = str(1.0/float(coords[5][:-1])).replace('e+00', '')
 
-for tweet in api.GetUserTimeline(screen_name='randommandelbot', count=8):
-    coords = tweet.text.split(' ')
-    re = coords[0]
-    im = coords[2][:-1]
-    scale = str(1.0/float(coords[5][:-1]))
+        print('>>> Random Mandelbrot', 're:', re, 'im:', im, 'scale:', scale)
 
-    print(re, im, scale)
-
-    for cm in ['2', '3', '4', '5', '6', '7']:
         fractal = subprocess.Popen([
-            '../bin/x64/Release/fractal.exe',
+            'bin/x64/Release/fractal.exe',
             '-re', re,
             '-im', im,
-            '-scale', scale,
-            '-4k', '-el', '262144', '-cm', cm
-        ], cwd='..')
+            '-scale', scale
+        ])
         fractal.communicate()
+finally:
+    os.chdir(prev_cwd)

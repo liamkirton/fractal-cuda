@@ -35,7 +35,8 @@ struct kernel_params {
                 escape_block_(escape_block), escape_limit_(escape_limit), colour_method_(colour_method),
                 escape_i_(0), escape_range_min_(0), escape_range_max_(escape_limit),
                 image_chunk_(0),
-                re_(re), im_(im), scale_(scale), re_c_(re_c), im_c_(im_c) {};
+                re_(re), im_(im), scale_(scale), re_c_(re_c), im_c_(im_c),
+                set_hue_(0.0), set_sat_(0.0), set_val_(0.0), palette_(nullptr), palette_count_(0) {};
     uint32_t image_width_;
     uint32_t image_height_;
 
@@ -54,6 +55,10 @@ struct kernel_params {
     T re_c_;
     T im_c_;
 
+    double set_hue_;
+    double set_sat_;
+    double set_val_;
+
     double *palette_;
     uint32_t palette_count_;
 };
@@ -66,11 +71,11 @@ constexpr double re_min = -3.0;
 constexpr double re_max = 3.0;
 
 #ifdef _DEBUG
-    constexpr uint32_t default_cuda_groups = 64;
+    constexpr uint32_t default_cuda_groups = 128;
     constexpr uint32_t default_cuda_threads = 256;
 
-    constexpr uint32_t default_escape_block = 256;
-    constexpr uint32_t default_escape_limit = 256;
+    constexpr uint32_t default_escape_block = 4095;
+    constexpr uint32_t default_escape_limit = 8192;
     constexpr double default_escape_radius = 16.0;
 
     constexpr uint32_t default_image_width = 640;

@@ -6,7 +6,7 @@
 
 class png {
 public:
-    png(std::string directory = "");
+    png(YAML::Node &run_config);
     ~png();
 
     template<typename T>
@@ -26,7 +26,9 @@ private:
     void write(std::tuple<uint64_t, uint64_t, const uint32_t *, std::string> &image);
 
     std::string directory_;
+    std::string prefix_;
 
+    HANDLE exit_event_;
     std::mutex mutex_;
     std::queue<std::tuple<uint64_t, uint64_t, const uint32_t *, std::string>> queue_;
     std::vector<std::thread> threads_;

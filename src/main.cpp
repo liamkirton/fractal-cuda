@@ -17,6 +17,8 @@
 #include <tuple>
 #include <vector>
 
+#include <yaml-cpp/yaml.h>
+
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
@@ -26,276 +28,116 @@
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct run_params {
-    uint64_t I = 0;
-    uint64_t F = 0;
-    uint64_t cuda_groups = 0;
-    uint64_t cuda_threads = 0;
+std::vector<std::tuple<double, double, double>> create_palette(YAML::Node &palette);
 
-    uint64_t image_width = default_image_width;
-    uint64_t image_height = default_image_height;
+void run(YAML::Node &run_config);
 
-    std::string re = "-0.5";
-    std::string im = "0.0";
-    std::string re_c = "";
-    std::string im_c = "";
-    std::string scale = "1.0";
-    std::string scale_factor = "0.5";
-
-    uint64_t escape_block = default_escape_block;
-    uint64_t escape_limit = default_escape_limit;
-
-    bool follow_variance = false;
-    bool random = false;
-    bool reset = false;
-    bool trial = true;
-
-    uint64_t count = 1;
-    uint64_t skip = 0;
-
-    uint8_t colour_method = 2;
-    std::string palette_file = "config\\palette_00.txt";
-    std::vector <std::tuple<double, double, double>> palette;
-};
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-void load_palette(run_params &params);
-
-template<uint32_t I, uint32_t F>
-void run(png &png_writer, run_params &params);
-
-template<>
-void run<0, 0>(png &png_writer, run_params &params);
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-HANDLE g_ExitEvent{ nullptr };
+template<uint32_t I, uint32_t F> bool run_step(YAML::Node &run_config, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, png &png_writer);
+template<> bool run_step<0, 0>(YAML::Node &run_config, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, png &png_writer);
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[]) {
-    g_ExitEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr); 
+    std::cout << std::endl
+        << "CUDA Fractal Generator" << std::endl
+        << "(C)2018 Liam Kirton <liam@int3.ws>" << std::endl
+        << std::endl;
 
-    auto usage = []() {
-        std::cout
-            << std::endl
-            << "Usage: cuda-fractal.exe -r|-re <re> -i|-im <im> -rc|-rec <re> -ic|-imc <im>" << std::endl
-            << "                        -s|-scale <scale> -sf|-scale-factor <scale-factor>" << std::endl
-            << "                        -fv|-follow-variance -r|-random -reset" << std::endl
-            << "                        -c|-count <count> -eb|-escape-block <escape-block> -el|-escape-limit <escape-limit>" << std::endl
-            << "                        -cm|-colour-method <colour-method> -pf|-palette-file <palette-file.txt>" << std::endl
-            << "                        -fp|-fixed-point <I/F> -cuda <groups/threads>" << std::endl
-            << "                        -w|-width <width> -h|-height <height>" << std::endl
-            << "                        -q|-quick -d|-detailed" << std::endl
-            << std::endl;
+    YAML::Node default_config;
+    std::vector<std::string> inst_config_files;
+
+    try {
+        default_config = YAML::LoadFile("config/default.yaml");
+    }
+    catch (YAML::BadFile &) {
+        std::cout << "[!] ERROR: Cannot Load config/default.yaml" << std::endl;
         return -1;
-    };
-
-    run_params params;
-    std::string directory = "output";
+    }
+    catch (YAML::ParserException &) {
+        std::cout << "[!] ERROR: Cannot Parse config/default.yaml" << std::endl;
+        return -1;
+    }
 
     for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        std::string param = "";
-        if ((i + 1) < argc) {
-            param = argv[i + 1];
+        std::string p = argv[i];
+        std::string v = "true"; 
+
+        if (p.at(0) != '-') {
+            inst_config_files.push_back(p);
+            continue;
         }
-        if ((arg == "-r") || (arg == "-re")) {
-            params.re = param;
-            ++i;
-        }
-        else if ((arg == "-i") || (arg == "-im")) {
-            params.im = param;
-            ++i;
-        }
-        else if ((arg == "-rc") || (arg == "-rec")) {
-            params.re_c = param;
-            ++i;
-        }
-        else if ((arg == "-ic") || (arg == "-imc")) {
-            params.im_c = param;
-            ++i;
-        }
-        else if ((arg == "-s") || (arg == "-scale")) {
-            params.scale = param;
-            ++i;
-        }
-        else if ((arg == "-sf") || (arg == "-scale-factor")) {
-            params.scale_factor = param;
-            ++i;
-        }
-        else if ((arg == "-fv") || (arg == "-follow-variance")) {
-            params.follow_variance = true;
-        }
-        else if ((arg == "-r") || (arg == "-random")) {
-            params.random = true;
-        }
-        else if (arg == "-reset") {
-            params.reset = true;
-        }
-        else if ((arg == "-nt") || (arg == "-no-trial")) {
-            params.trial = false;
-        }
-        else if ((arg == "-c") || (arg == "-count")) {
-            params.count = std::atoll(param.c_str());
-            ++i;
-        }
-        else if ((arg == "-eb") || (arg == "-escape-block")) {
-            params.escape_block = std::atoll(param.c_str());
-            ++i;
-        }
-        else if ((arg == "-el") || (arg == "-escape-limit")) {
-            params.escape_limit = std::atoll(param.c_str());
-            ++i;
-        }
-        else if ((arg == "-cm") || (arg == "-colour-method")) {
-            params.colour_method = static_cast<uint8_t>(std::atoi(param.c_str()));
-            ++i;
-        }
-        else if ((arg == "-pf") || (arg == "-palette-file")) {
-            params.palette_file = param;
-            ++i;
-        }
-        else if (arg == "-skip") {
-            params.skip = std::atoll(param.c_str());
-            ++i;
-        }
-        else if ((arg == "-w") || (arg == "-width")) {
-            params.image_width = std::atoll(param.c_str());
-            if (params.image_width == 0) {
-                return usage();
+
+        p = p.substr(1);
+        if (i < argc - 1) {
+            std::string parse_v = argv[i + 1];
+            if ((parse_v.at(0) != '-') || std::all_of(parse_v.begin(), parse_v.end(), [](char c) { return isdigit(c) || (c == '.') || (c == '-') || (c == 'e') || (c == 'E'); })) {
+                v = argv[++i];
             }
-            ++i;
         }
-        else if ((arg == "-h") || (arg == "-height")) {
-            params.image_height = std::atoll(param.c_str());
-            if (params.image_height == 0) {
-                return usage();
-            }
-            ++i;
-        }
-        else if (((arg == "-fp") || (arg == "-fixed-point")) && (param.find("/") != std::string::npos)) {
-            params.I = std::atoll(param.substr(0, param.find("/")).c_str());
-            params.F = std::atoll(param.substr(param.find("/") + 1).c_str());
-            if ((params.I == 0) || (params.I > 4) || (params.F == 0) || (params.F > 1024)) {
-                return usage();
-            }
-            ++i;
-        }
-        else if ((arg == "-cuda") && (param.find("/") != std::string::npos)) {
-            params.cuda_groups = std::atoll(param.substr(0, param.find("/")).c_str());
-            params.cuda_threads = std::atoll(param.substr(param.find("/") + 1).c_str());
-            if ((params.cuda_groups == 0) || ((params.cuda_groups > 1) && ((params.cuda_groups % 2) != 0)) ||
-                (params.cuda_threads == 0) || (params.cuda_threads > 1024) || ((params.cuda_threads > 1) && ((params.cuda_threads % 2) != 0))) {
-                return usage();
-            }
-            ++i;
-        }
-        else if (arg == "-hd") {
-            params.image_width = 1920;
-            params.image_height = 1080;
-        }
-        else if (arg == "-4k") {
-            params.image_width = 3840;
-            params.image_height = 2160;
-        }
-        else if (arg == "-5k") {
-            params.image_width = 5120;
-            params.image_height = 2880;
-        }
-        else if (arg == "-8k") {
-            params.image_width = 7680;
-            params.image_height = 4320;
-        }
-        else if (arg == "-16k") {
-            params.image_width = 15360;
-            params.image_height = 8640;
-        }
-        else if ((arg == "-q") || (arg == "-quick")) {
-            params.image_width = 320;
-            params.image_height = 240;
-            params.escape_limit = 256;
-        }
-        else if ((arg == "-o") || (arg == "-output")) {
-            directory = param;
-            ++i;
+
+        if (default_config[p] && (default_config[p].Type() == YAML::NodeType::Scalar)) {
+            default_config[p] = v;
         }
         else {
-            std::cout << arg << std::endl;
-            return usage();
+            std::cout << "[!] ERROR: Unrecognised Option \"" << p << "\" = \"" << v << "\"" << std::endl;
+            return -1;
         }
     }
 
-    load_palette(params);
+    try {
+        if (inst_config_files.size() == 0) {
+            run(default_config);
+        }
+        else {
+            for (auto &f : inst_config_files) {
+                YAML::Node load_config;
+                try {
+                    load_config = YAML::LoadFile(f);
+                }
+                catch (YAML::BadFile &) {
+                    std::cout << "[!] ERROR: Cannot Load " << f << std::endl;
+                    continue;
+                }
+                catch (YAML::ParserException &) {
+                    std::cout << "[!] ERROR: Cannot Parse " << f << std::endl;
+                    continue;
+                }
 
-    png png_writer(directory);
+                YAML::Node run_config = default_config;
+                for (auto &c : load_config) {
+                    run_config[c.first.as<std::string>()] = c.second;
+                }
 
-    if ((params.I == 0) && (params.F == 0)) {
-        run<0, 0>(png_writer, params);
-    }
-    else {
-        switch (params.I) {
-        case 1:
-            switch (params.F) {
-            case 1: run<1, 1>(png_writer, params); break;
-            case 2: run<1, 2>(png_writer, params); break;
-            default: return usage();
+                run(run_config);
             }
-            break;
-        case 2:
-            switch (params.F) {
-            case 2: run<2, 2>(png_writer, params); break;
-            //case 3: run<2, 3>(png_writer, params); break;
-            case 4: run<2, 4>(png_writer, params); break;
-            //case 6: run<2, 6>(png_writer, params); break;
-            case 8: run<2, 8>(png_writer, params); break;
-            case 12: run<2, 12>(png_writer, params); break;
-            case 16: run<2, 16>(png_writer, params); break;
-            //case 24: run<2, 24>(png_writer, params); break;
-            //case 32: run<2, 32>(png_writer, params); break;
-            //case 64: run<2, 64>(png_writer, params); break;
-            //case 128: run<2, 128>(png_writer, params); break;
-            //case 256: run<2, 256>(png_writer, params); break;
-            default: return usage();
-            }
-            break;
-        default:
-            return usage();
         }
     }
-
-    SetEvent(g_ExitEvent);
-
-    std::cout << std::endl;
+    catch (std::exception &e) {
+        std::cout << "[!] ERROR: Caught Unexpected Exception - " << e.what() << std::endl;
+    }
 
     return 0;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void load_palette(run_params &params) {
-    std::vector <std::tuple<double, double, double>> parse_palette;
+std::vector<std::tuple<double, double, double>> create_palette(YAML::Node &run_config) {
+    std::vector <std::tuple<double, double, double>> palette;
 
-    std::ifstream f(params.palette_file, std::ios::in);
-    std::string l;
-    while (f.is_open() && !f.eof() && std::getline(f, l)) {
-        if ((l.length() == 0) || (l.at(0) == '#')) {
+    for (auto &i : run_config["colour_palette"]) {
+        if (i.size() != 3) {
             continue;
         }
 
-        double hue = 0.0;
-        double sat = 0.0;
-        double val = 0.0;
-
-        std::stringstream ls(l);
-        ls >> hue >> sat >> val;
+        double hue = i[0].as<double>();
+        double sat = i[1].as<double>();
+        double val = i[2].as<double>();
 
         if (hue > 1.0) hue /= 360.0;
         if (sat > 1.0) sat /= 100.0;
         if (val > 1.0) val /= 100.0;
 
-        parse_palette.push_back(std::make_tuple(hue, sat, val));
+        palette.push_back(std::make_tuple(hue, sat, val));
     }
 
     auto binomial = [](uint32_t k, uint32_t n) {
@@ -306,131 +148,152 @@ void load_palette(run_params &params) {
         return r;
     };
 
-    for (uint32_t i = 0; i < parse_palette.size(); ++i) {
-        auto &p = parse_palette.at(i);
-        double hue = std::get<0>(p);
-        double sat = std::get<1>(p);
-        double val = std::get<2>(p);
-        double coeff = binomial(i, parse_palette.size() - 1);
-        params.palette.push_back(std::make_tuple(
-            hue * coeff,
-            sat * coeff,
-            val * coeff
-        ));
+    for (uint32_t i = 1; i < palette.size(); ++i) {
+        double coeff = binomial(i - 1, static_cast<uint32_t>(palette.size() - 2));
+        auto &p = palette.at(i);
+        std::get<0>(p) = std::get<0>(p) * coeff;
+        std::get<1>(p) = std::get<1>(p) * coeff;
+        std::get<2>(p) = std::get<2>(p) * coeff;
     }
+
+    return palette;
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<>
-void run<0, 0>(png &png_writer, run_params &params) {
-    fractal<double> f(params.image_width, params.image_height);
-    if ((params.cuda_groups != 0) && (params.cuda_threads != 0)) {
-        f.initialise(params.cuda_groups, params.cuda_threads);
-    }
+void run(YAML::Node &run_config) {
+    std::vector<std::tuple<double, double, double>> palette = create_palette(run_config);
+    png png_writer(run_config);
 
-    f.colour(params.colour_method, params.palette);
-    f.limits(params.escape_limit, params.escape_block);
+    fixed_point<2, 32> scale(run_config["scale"].as<std::string>());
+    fixed_point<2, 32> scale_factor(run_config["scale_factor"].as<std::string>());
 
-    double re{ 0 };
-    double im{ 0 };
-    double scale{ 0 };
-    double scale_factor{ 0 };
+    uint32_t image_width = run_config["image_width"].as<uint32_t>();
+    uint32_t image_height = run_config["image_height"].as<uint32_t>();
 
-    auto reset = [&]() {
-        re = std::stod(params.re);
-        im = std::stod(params.im);
-        scale = std::stod(params.scale);
-        if (scale > 10.0) {
-            scale = 1.0 / scale;
-        }
-        scale_factor = std::stod(params.scale_factor);
-        if (params.random) {
-            std::random_device random;
-            std::mt19937 gen(random());
-            re = std::uniform_real_distribution<>(-2.0, 1.0)(gen);
-            im = std::uniform_real_distribution<>(-1.0, 1.0)(gen);
-            scale = std::uniform_real_distribution<>(0.00005, 1.0)(gen);
-        }
-        if ((params.re_c.size() != 0) && (params.im_c.size() != 0)) {
-            f.specify_julia(std::stod(params.re_c), std::stod(params.im_c));
-        }
-    };
+    double step_re = (re_max - re_min) / image_width;
+    double step_im = (im_max - im_min) / image_height;
+    fixed_point<2, 32> step((step_re > step_im) ? step_re : step_im);
 
-    reset();
+    for (uint32_t i = 0; i < run_config["count"].as<uint32_t>(); ++i) {
+        if (i >= run_config["skip"].as<uint32_t>()) {
+            fixed_point<2, 32> precision_test(step);
+            precision_test.multiply(scale);
+            uint32_t precision_bit = precision_test.get_fractional_significant_bit();
 
-    for (uint32_t i = 0; i < params.count; ++i) {
-        if (i >= params.skip) {
-            std::cout << std::endl << "[+] Generating Fractal #" << i << std::endl;
-            f.specify(re, im, scale);
+            std::cout << "[+] Generating Fractal #" << i << std::endl
+                << "  [+] Precison Bit: " << precision_bit;
 
-            timer gen_timer;
-            if (f.generate(params.trial)) {
-                gen_timer.stop();
-                gen_timer.print();
-
-                png_writer.write(f, i);
-
-                if (params.follow_variance) {
-                    re = f.re_max_variance();
-                    im = f.im_max_variance();
-                }
+            if (precision_bit < 53) {
+                run_step<0, 0>(run_config, i, palette, png_writer);
+            }
+            else if (precision_bit < 32 * 2) {
+                run_step<1, 2>(run_config, i, palette, png_writer);
+            }
+            else if (precision_bit < 32 * 3) {
+                run_step<1, 3>(run_config, i, palette, png_writer);
+            }
+            else if (precision_bit < 32 * 4) {
+                run_step<1, 4>(run_config, i, palette, png_writer);
+            }
+            else if (precision_bit < 32 * 6) {
+                run_step<1, 6>(run_config, i, palette, png_writer);
+            }
+            else if (precision_bit < 32 * 8) {
+                run_step<1, 8>(run_config, i, palette, png_writer);
+            }
+            else if (precision_bit < 32 * 12) {
+                run_step<1, 12>(run_config, i, palette, png_writer);
+            }
+            else if (precision_bit < 32 * 16) {
+                run_step<1, 16>(run_config, i, palette, png_writer);
+            }
+            else if (precision_bit < 32 * 20) {
+                run_step<1, 20>(run_config, i, palette, png_writer);
+            }
+            else if (precision_bit < 32 * 24) {
+                run_step<1, 24>(run_config, i, palette, png_writer);
+            }
+            else if (precision_bit < 32 * 28) {
+                run_step<1, 28>(run_config, i, palette, png_writer);
+            }
+            else if (precision_bit < 32 * 32) {
+                run_step<1, 32>(run_config, i, palette, png_writer);
             }
             else {
-                if (!params.reset) {
-                    break;
-                }
-                --i;
-                reset();
+                std::cout << " - UNSUPPORTED" << std::endl;
             }
         }
-        scale *= scale_factor;
-    }
-}
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<uint32_t I, uint32_t F>
-void run(png &png_writer, run_params &params) {
-    fractal<fixed_point<I, F>> f(params.image_width, params.image_height);
-    if ((params.cuda_groups != 0) && (params.cuda_threads != 0)) {
-        f.initialise(params.cuda_groups, params.cuda_threads);
-    }
-    f.colour(params.colour_method, params.palette);
-    f.limits(params.escape_limit, params.escape_block);
-
-    fixed_point<I, F> re(params.re);
-    fixed_point<I, F> im(params.im);
-    fixed_point<I, F> scale(params.scale);
-    fixed_point<I, F> scale_factor(params.scale_factor);
-
-    if ((params.re_c.size() != 0) && (params.im_c.size() != 0)) {
-        fixed_point<I, F> re_c(params.re_c);
-        fixed_point<I, F> im_c(params.im_c);
-        f.specify_julia(re_c, im_c);
-    }
-
-    for (uint32_t i = 0; i < params.count; ++i) {
-        if (i >= params.skip) {
-            std::cout << std::endl << "[+] Generating Fractal #" << i << std::endl;
-            f.specify(re, im, scale);
-
-            timer gen_timer;
-            if (!f.generate(params.trial)) {
-                break;
-            }
-            gen_timer.stop();
-            gen_timer.print();
-
-            png_writer.write(f, i);
-
-            if (params.follow_variance) {
-                re.set(f.re_max_variance());
-                im.set(f.im_max_variance());
-            }
-        }
+        std::cout << std::endl;
         scale.multiply(scale_factor);
     }
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<> bool run_step<0, 0>(YAML::Node &run_config, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, png &png_writer) {
+    fractal<double> f(run_config["image_width"].as<uint32_t>(), run_config["image_height"].as<uint32_t>());
+    if ((run_config["cuda_groups"].as<uint32_t>() != 0) && (run_config["cuda_threads"].as<uint32_t>() != 0)) {
+        f.initialise(run_config["cuda_groups"].as<uint32_t>(), run_config["cuda_threads"].as<uint32_t>());
+    }
+
+    f.colour(run_config["colour_method"].as<uint32_t>(), palette);
+    f.limits(run_config["escape_limit"].as<uint32_t>(), run_config["escape_block"].as<uint32_t>());
+
+    double re = run_config["re"].as<double>();
+    double im = run_config["im"].as<double>();
+    double scale = run_config["scale"].as<double>();
+    double scale_factor = run_config["scale_factor"].as<double>();
+
+    for (uint32_t i = 0; i < ix; ++i) {
+        scale *= scale_factor;
+    }
+
+    std::cout << ", Type: double" << std::endl;
+    f.specify(re, im, scale);
+
+    timer gen_timer;
+    if (f.generate(run_config["trial"].as<bool>(), true)) {
+        gen_timer.stop();
+        gen_timer.print();
+        png_writer.write(f, ix);
+    }
+
+    return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<uint32_t I, uint32_t F> bool run_step(YAML::Node &run_config, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, png &png_writer) {
+    fractal<fixed_point<I, F>> f(run_config["image_width"].as<uint32_t>(), run_config["image_height"].as<uint32_t>());
+    if ((run_config["cuda_groups"].as<uint32_t>() != 0) && (run_config["cuda_threads"].as<uint32_t>() != 0)) {
+        f.initialise(run_config["cuda_groups"].as<uint32_t>(), run_config["cuda_threads"].as<uint32_t>());
+    }
+
+    f.colour(run_config["colour_method"].as<uint32_t>(), palette);
+    f.limits(run_config["escape_limit"].as<uint32_t>(), run_config["escape_block"].as<uint32_t>());
+
+    fixed_point<I, F> re(run_config["re"].as<std::string>());
+    fixed_point<I, F> im(run_config["im"].as<std::string>());
+    fixed_point<I, F> scale(run_config["scale"].as<std::string>());
+    fixed_point<I, F> scale_factor(run_config["scale_factor"].as<std::string>());
+
+    for (uint32_t i = 0; i < ix; ++i) {
+        scale.multiply(scale_factor);
+    }
+
+    std::cout << ", Type: fixed_point<" << I << ", " << F << ">" << std::endl;
+    f.specify(re, im, scale);
+
+    timer gen_timer;
+    if (f.generate(run_config["trial"].as<bool>(), true)) {
+        gen_timer.stop();
+        gen_timer.print();
+        png_writer.write(f, ix);
+    }
+
+    return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

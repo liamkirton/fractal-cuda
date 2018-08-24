@@ -15,6 +15,8 @@
 #include <tuple>
 #include <vector>
 
+#include <yaml-cpp/yaml.h>
+
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
@@ -29,16 +31,24 @@ extern HANDLE g_ExitEvent;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-png::png(std::string directory) : directory_(directory) {
-    DWORD directory_attributes = GetFileAttributes(directory.c_str());
+png::png(YAML::Node &run_config) {
+    directory_ = run_config["image_directory"].as<std::string>();
+    prefix_ = run_config["image_name_prefix"].as<std::string>();
+    if (prefix_.size() > 0) {
+        prefix_ += "_";
+    }
+
+    DWORD directory_attributes = GetFileAttributes(directory_.c_str());
     if ((directory_attributes == INVALID_FILE_ATTRIBUTES) || !(directory_attributes & FILE_ATTRIBUTE_DIRECTORY)) {
         CreateDirectory(directory_.c_str(), nullptr);
     }
 
+    exit_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
+
     for (uint32_t i = 0; i < 4; ++i) {
         threads_.push_back(std::thread([this]() {
             while (true) {
-                if (WaitForSingleObject(g_ExitEvent, 1000) == WAIT_OBJECT_0) {
+                if (WaitForSingleObject(exit_event_, 1000) == WAIT_OBJECT_0) {
                     std::lock_guard<std::mutex> lock(mutex_);
                     if (queue_.empty()) {
                         break;
@@ -63,9 +73,11 @@ png::png(std::string directory) : directory_(directory) {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 png::~png() {
+    SetEvent(exit_event_);
     for (auto &t : threads_) {
         t.join();
     }
+    CloseHandle(exit_event_);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -89,7 +101,7 @@ void png::write(std::tuple<uint64_t, uint64_t, const uint32_t *, std::string> &i
     _localtime64_s(&tm_now, &time_now);
 
     std::stringstream fn;
-    fn << directory_ << "\\" << std::put_time(&tm_now, "%Y%m%d-%H%M%S") << " " << suffix << ".png";
+    fn << directory_ << "\\" << prefix_ << std::put_time(&tm_now, "%Y%m%d-%H%M%S") << " " << suffix << ".png";
 
     FILE *file{ nullptr };
     if (fopen_s(&file, fn.str().c_str(), "wb") != 0) {

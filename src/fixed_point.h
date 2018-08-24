@@ -56,6 +56,19 @@ public:
         }
     }
 
+    inline __host__ __device__ uint32_t get_fractional_significant_bit() const {
+        for (int32_t i = F - 1; i >= 0; --i) {
+            if (data[i] != 0) {
+                for (int32_t j = 31; j >= 0; --j) {
+                    if (data[i] & (1 << j)) {
+                        return 32 * (F - 1 - i) + 32 - j;
+                    }
+                }
+            }
+        }
+        return 0;
+    }
+
     inline __host__ __device__ double get_double() const {
         double value = 1.0;
         *reinterpret_cast<uint64_t *>(&value) |= (get_fractional() >> 12);

@@ -19,20 +19,17 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template class fractal<double>;
-template class fractal<fixed_point<1, 1>>; 
 template class fractal<fixed_point<1, 2>>;
-template class fractal<fixed_point<2, 2>>;
-//template class fractal<fixed_point<2, 3>>;
-template class fractal<fixed_point<2, 4>>;
-//template class fractal<fixed_point<2, 6>>;
-template class fractal<fixed_point<2, 8>>;
-template class fractal<fixed_point<2, 12>>;
-template class fractal<fixed_point<2, 16>>;
-//template class fractal<fixed_point<2, 24>>;
-//template class fractal<fixed_point<2, 32>>;
-//template class fractal<fixed_point<2, 64>>;
-//template class fractal<fixed_point<2, 128>>;
-//template class fractal<fixed_point<2, 256>>;
+template class fractal<fixed_point<1, 3>>;
+template class fractal<fixed_point<1, 4>>;
+template class fractal<fixed_point<1, 6>>;
+template class fractal<fixed_point<1, 8>>;
+template class fractal<fixed_point<1, 12>>;
+template class fractal<fixed_point<1, 16>>;
+template class fractal<fixed_point<1, 20>>;
+template class fractal<fixed_point<1, 24>>;
+template class fractal<fixed_point<1, 28>>;
+template class fractal<fixed_point<1, 32>>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -198,18 +195,23 @@ bool fractal<T>::generate(kernel_params<T> &params, bool colour) {
     kernel_params<T> *params_device{ nullptr };
 
     if (colour && (palette_.size() > 0)) {
-        cudaMalloc(&params.palette_, 3 * sizeof(double) * palette_.size()); 
-        if (params.palette_ != nullptr) {
-            params.palette_count_ = palette_.size();
+        cudaMalloc(&params.palette_, 3 * sizeof(double) * palette_.size());
 
-            double *create_palette = new double[palette_.size() * 3];
-            for (uint32_t i = 0; i < palette_.size(); ++i) {
-                create_palette[i * 3 + 0] = std::get<0>(palette_.at(i));
-                create_palette[i * 3 + 1] = std::get<1>(palette_.at(i));
-                create_palette[i * 3 + 2] = std::get<2>(palette_.at(i));
+        params.set_hue_ = std::get<0>(palette_.at(0));
+        params.set_sat_ = std::get<1>(palette_.at(0));
+        params.set_val_ = std::get<2>(palette_.at(0));
+
+        if (params.palette_ != nullptr) {
+            params.palette_count_ = palette_.size() - 1;
+
+            double *create_palette = new double[(palette_.size() - 1) * 3];
+            for (uint32_t i = 0; i < palette_.size() - 1; ++i) {
+                create_palette[i * 3 + 0] = std::get<0>(palette_.at(i + 1));
+                create_palette[i * 3 + 1] = std::get<1>(palette_.at(i + 1));
+                create_palette[i * 3 + 2] = std::get<2>(palette_.at(i + 1));
             }
 
-            cudaMemcpy(params.palette_, create_palette, 3 * sizeof(double) * palette_.size(), cudaMemcpyHostToDevice);
+            cudaMemcpy(params.palette_, create_palette, 3 * sizeof(double) * (palette_.size() - 1), cudaMemcpyHostToDevice);
             delete[] create_palette;
         }
     }
@@ -258,7 +260,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool colour) {
 
         if (colour) {
             cudaMemset(block_device_image_, 0, cuda_groups_ * cuda_threads_ * sizeof(uint32_t));
-            kernel_colour<T> <<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device_, params_device, block_device_image_);
+            kernel_colour<T><<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device_, params_device, block_device_image_);
 
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                 std::cout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError << std::endl;
@@ -581,18 +583,14 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
 
     kernel_block<T> *block = &blocks[tid];
 
-    double r = 0.0;
-    double g = 0.0;
-    double b = 0.0;
+    double hue = params->set_hue_;
+    double sat = params->set_sat_;
+    double val = params->set_val_;
 
     if (block->escape_ < params->escape_limit_) {
         double abs = pow(static_cast<double>(block->re_), 2.0) + pow(static_cast<double>(block->im_), 2.0);
         double escape = static_cast<double>(block->escape_) - static_cast<double>(params->escape_range_min_);
         double escape_max = static_cast<double>(1.0 + params->escape_range_max_ - params->escape_range_min_);
-
-        double hue = 0.0;
-        double sat = 0.95;
-        double val = 0.95;
 
         double mu = 1.0 + escape - log2(0.5 * log(abs) / log(default_escape_radius));
         if (mu < 1.0) mu = 1.0;
@@ -622,7 +620,7 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
         case 4:
         case 5:
             hue = 360.0 * log(mu) / log(escape_max);
-            break; 
+            break;
         case 6:
         case 7:
             if (mu < 2.71828182846) {
@@ -635,40 +633,44 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
         if (params->colour_method_ % 2 == 1) {
             sat = 0.95 - log(2.0) + log(log(abs));
         }
-
-        hue = fmod(hue, 360.0);
-        hue /= 60.0;
-
-        double hue_floor = floor(hue);
-        double hue_fract = hue - hue_floor;
-        double p = val * (1.0 - sat);
-        double q = val * (1.0 - sat * hue_fract);
-        double t = val * (1.0 - sat * (1.0 - hue_fract));
-
-        switch (static_cast<unsigned char>(hue_floor) % 6) {
-        case 0:
-            r = val; g = t; b = p;
-            break;
-        case 1:
-            r = q; g = val; b = p;
-            break;
-        case 2:
-            r = p; g = val; b = t;
-            break;
-        case 3:
-            r = p; g = q; b = val;
-            break;
-        case 4:
-            r = t; g = p; b = val;
-            break;
-        case 5:
-            r = val; g = p; b = q;
-            break;
-        default:
-            break;
-        }
-        r = floor(r * 255); g = floor(g * 255); b = floor(b * 255);
     }
+
+    hue = fmod(hue, 360.0);
+    hue /= 60.0;
+
+    double hue_floor = floor(hue);
+    double hue_fract = hue - hue_floor;
+    double p = val * (1.0 - sat);
+    double q = val * (1.0 - sat * hue_fract);
+    double t = val * (1.0 - sat * (1.0 - hue_fract));
+
+    double r = 0.0;
+    double g = 0.0;
+    double b = 0.0;
+
+    switch (static_cast<unsigned char>(hue_floor) % 6) {
+    case 0:
+        r = val; g = t; b = p;
+        break;
+    case 1:
+        r = q; g = val; b = p;
+        break;
+    case 2:
+        r = p; g = val; b = t;
+        break;
+    case 3:
+        r = p; g = q; b = val;
+        break;
+    case 4:
+        r = t; g = p; b = val;
+        break;
+    case 5:
+        r = val; g = p; b = q;
+        break;
+    default:
+        break;
+    }
+    r = floor(r * 255); g = floor(g * 255); b = floor(b * 255);
 
     block_image[tid] =
         (static_cast<unsigned char>(r)) |
