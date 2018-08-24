@@ -63,3 +63,5 @@ follow_variance: false
 random: false
 reset: false
 trial: true
+
+interactive: false

@@ -23,17 +23,18 @@
 #include "device_launch_parameters.h"
 
 #include "fractal.h"
-#include "png.h"
+#include "writer.h"
+#include "png_writer.h"
 #include "timer.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 std::vector<std::tuple<double, double, double>> create_palette(YAML::Node &palette);
 
-void run(YAML::Node &run_config);
+void run(YAML::Node &run_config, writer *w);
 
-template<uint32_t I, uint32_t F> bool run_step(YAML::Node &run_config, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, png &png_writer);
-template<> bool run_step<0, 0>(YAML::Node &run_config, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, png &png_writer);
+template<uint32_t I, uint32_t F> bool run_step(YAML::Node &run_config, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, writer *w);
+template<> bool run_step<0, 0>(YAML::Node &run_config, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, writer *w);
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -84,36 +85,43 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    try {
-        if (inst_config_files.size() == 0) {
-            run(default_config);
-        }
-        else {
-            for (auto &f : inst_config_files) {
-                YAML::Node load_config;
-                try {
-                    load_config = YAML::LoadFile(f);
-                }
-                catch (YAML::BadFile &) {
-                    std::cout << "[!] ERROR: Cannot Load " << f << std::endl;
-                    continue;
-                }
-                catch (YAML::ParserException &) {
-                    std::cout << "[!] ERROR: Cannot Parse " << f << std::endl;
-                    continue;
-                }
+    if (default_config["interactive"].as<bool>()) {
+        //run_interactive();
+    }
+    else {
+        try {
+            if (inst_config_files.size() == 0) {
+                std::unique_ptr<png_writer> png(new png_writer(default_config));
+                run(default_config, dynamic_cast<writer *>(png.get()));
+            }
+            else {
+                for (auto &f : inst_config_files) {
+                    YAML::Node load_config;
+                    try {
+                        load_config = YAML::LoadFile(f);
+                    }
+                    catch (YAML::BadFile &) {
+                        std::cout << "[!] ERROR: Cannot Load " << f << std::endl;
+                        continue;
+                    }
+                    catch (YAML::ParserException &) {
+                        std::cout << "[!] ERROR: Cannot Parse " << f << std::endl;
+                        continue;
+                    }
 
-                YAML::Node run_config = default_config;
-                for (auto &c : load_config) {
-                    run_config[c.first.as<std::string>()] = c.second;
-                }
+                    YAML::Node run_config = default_config;
+                    for (auto &c : load_config) {
+                        run_config[c.first.as<std::string>()] = c.second;
+                    }
 
-                run(run_config);
+                    std::unique_ptr<png_writer> png(new png_writer(run_config));
+                    run(run_config, dynamic_cast<writer *>(png.get()));
+                }
             }
         }
-    }
-    catch (std::exception &e) {
-        std::cout << "[!] ERROR: Caught Unexpected Exception - " << e.what() << std::endl;
+        catch (std::exception &e) {
+            std::cout << "[!] ERROR: Caught Unexpected Exception - " << e.what() << std::endl;
+        }
     }
 
     return 0;
@@ -161,9 +169,8 @@ std::vector<std::tuple<double, double, double>> create_palette(YAML::Node &run_c
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void run(YAML::Node &run_config) {
+void run(YAML::Node &run_config, writer *w) {
     std::vector<std::tuple<double, double, double>> palette = create_palette(run_config);
-    png png_writer(run_config);
 
     fixed_point<2, 32> scale(run_config["scale"].as<std::string>());
     fixed_point<2, 32> scale_factor(run_config["scale_factor"].as<std::string>());
@@ -185,40 +192,40 @@ void run(YAML::Node &run_config) {
                 << "  [+] Precison Bit: " << precision_bit;
 
             if (precision_bit < 53) {
-                run_step<0, 0>(run_config, i, palette, png_writer);
+                run_step<0, 0>(run_config, i, palette, w);
             }
             else if (precision_bit < 32 * 2) {
-                run_step<1, 2>(run_config, i, palette, png_writer);
+                run_step<1, 2>(run_config, i, palette, w);
             }
             else if (precision_bit < 32 * 3) {
-                run_step<1, 3>(run_config, i, palette, png_writer);
+                run_step<1, 3>(run_config, i, palette, w);
             }
             else if (precision_bit < 32 * 4) {
-                run_step<1, 4>(run_config, i, palette, png_writer);
+                run_step<1, 4>(run_config, i, palette, w);
             }
             else if (precision_bit < 32 * 6) {
-                run_step<1, 6>(run_config, i, palette, png_writer);
+                run_step<1, 6>(run_config, i, palette, w);
             }
             else if (precision_bit < 32 * 8) {
-                run_step<1, 8>(run_config, i, palette, png_writer);
+                run_step<1, 8>(run_config, i, palette, w);
             }
             else if (precision_bit < 32 * 12) {
-                run_step<1, 12>(run_config, i, palette, png_writer);
+                run_step<1, 12>(run_config, i, palette, w);
             }
             else if (precision_bit < 32 * 16) {
-                run_step<1, 16>(run_config, i, palette, png_writer);
+                run_step<1, 16>(run_config, i, palette, w);
             }
             else if (precision_bit < 32 * 20) {
-                run_step<1, 20>(run_config, i, palette, png_writer);
+                run_step<1, 20>(run_config, i, palette, w);
             }
             else if (precision_bit < 32 * 24) {
-                run_step<1, 24>(run_config, i, palette, png_writer);
+                run_step<1, 24>(run_config, i, palette, w);
             }
             else if (precision_bit < 32 * 28) {
-                run_step<1, 28>(run_config, i, palette, png_writer);
+                run_step<1, 28>(run_config, i, palette, w);
             }
             else if (precision_bit < 32 * 32) {
-                run_step<1, 32>(run_config, i, palette, png_writer);
+                run_step<1, 32>(run_config, i, palette, w);
             }
             else {
                 std::cout << " - UNSUPPORTED" << std::endl;
@@ -232,7 +239,7 @@ void run(YAML::Node &run_config) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<> bool run_step<0, 0>(YAML::Node &run_config, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, png &png_writer) {
+template<> bool run_step<0, 0>(YAML::Node &run_config, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, writer *w) {
     fractal<double> f(run_config["image_width"].as<uint32_t>(), run_config["image_height"].as<uint32_t>());
     if ((run_config["cuda_groups"].as<uint32_t>() != 0) && (run_config["cuda_threads"].as<uint32_t>() != 0)) {
         f.initialise(run_config["cuda_groups"].as<uint32_t>(), run_config["cuda_threads"].as<uint32_t>());
@@ -268,7 +275,14 @@ template<> bool run_step<0, 0>(YAML::Node &run_config, uint32_t ix, std::vector<
     if (f.generate(run_config["trial"].as<bool>())) {
         gen_timer.stop();
         gen_timer.print();
-        png_writer.write(f, ix);
+
+        std::stringstream suffix;
+        suffix << std::setfill('0')
+            << "ix=" << ix << "_"
+            << "re=" << std::setprecision(12) << f.re() << "_"
+            << "im=" << std::setprecision(12) << f.im() << "_"
+            << "scale=" << std::setprecision(12) << f.scale();
+        w->write(f.image_width(), f.image_height(), f.image(true), suffix.str(), ix);
     }
 
     return true;
@@ -276,7 +290,7 @@ template<> bool run_step<0, 0>(YAML::Node &run_config, uint32_t ix, std::vector<
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<uint32_t I, uint32_t F> bool run_step(YAML::Node &run_config, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, png &png_writer) {
+template<uint32_t I, uint32_t F> bool run_step(YAML::Node &run_config, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, writer *w) {
     fractal<fixed_point<I, F>> f(run_config["image_width"].as<uint32_t>(), run_config["image_height"].as<uint32_t>());
     if ((run_config["cuda_groups"].as<uint32_t>() != 0) && (run_config["cuda_threads"].as<uint32_t>() != 0)) {
         f.initialise(run_config["cuda_groups"].as<uint32_t>(), run_config["cuda_threads"].as<uint32_t>());
@@ -312,7 +326,14 @@ template<uint32_t I, uint32_t F> bool run_step(YAML::Node &run_config, uint32_t 
     if (f.generate(run_config["trial"].as<bool>())) {
         gen_timer.stop();
         gen_timer.print();
-        png_writer.write(f, ix);
+
+        std::stringstream suffix;
+        suffix << std::setfill('0')
+            << "ix=" << ix << "_"
+            << "re=" << std::setprecision(12) << f.re() << "_"
+            << "im=" << std::setprecision(12) << f.im() << "_"
+            << "scale=" << std::setprecision(12) << f.scale();
+        w->write(f.image_width(), f.image_height(), f.image(true), suffix.str(), ix);
     }
 
     return true;

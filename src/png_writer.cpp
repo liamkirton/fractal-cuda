@@ -23,7 +23,8 @@
 #include <png.h>
 
 #include "fractal.h"
-#include "png.h"
+#include "writer.h"
+#include "png_writer.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -31,7 +32,7 @@ extern HANDLE g_ExitEvent;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-png::png(YAML::Node &run_config) {
+png_writer::png_writer(YAML::Node &run_config) : writer(run_config) {
     directory_ = run_config["image_directory"].as<std::string>();
     prefix_ = run_config["image_name_prefix"].as<std::string>();
     if (prefix_.size() > 0) {
@@ -72,7 +73,7 @@ png::png(YAML::Node &run_config) {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-png::~png() {
+png_writer::~png_writer() {
     SetEvent(exit_event_);
     for (auto &t : threads_) {
         t.join();
@@ -82,7 +83,7 @@ png::~png() {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void png::write(std::tuple<uint64_t, uint64_t, const uint32_t *, std::string> &image) {
+void png_writer::write(std::tuple<uint64_t, uint64_t, const uint32_t *, std::string> &image) {
     uint64_t image_width = std::get<0>(image);
     uint64_t image_height = std::get<1>(image);
     const uint32_t *image_buffer = std::get<2>(image);

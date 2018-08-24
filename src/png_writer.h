@@ -4,22 +4,14 @@
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-class png {
+class png_writer : public writer {
 public:
-    png(YAML::Node &run_config);
-    ~png();
+    png_writer(YAML::Node &run_config);
+    ~png_writer();
 
-    template<typename T>
-    void write(fractal<T> &f, uint64_t ix = 0) {
-        std::stringstream suffix;
-        suffix << std::setfill('0')
-            << "ix=" << ix << "_"
-            << "re=" << std::setprecision(12) << f.re() << "_"
-            << "im=" << std::setprecision(12) << f.im() << "_"
-            << "scale=" << std::setprecision(12) << f.scale();
-
+    virtual void write(uint32_t image_width, uint32_t image_height, const uint32_t *image, std::string &suffix, uint64_t ix = 0) {
         std::lock_guard<std::mutex> lock(mutex_);
-        queue_.push(std::make_tuple(f.image_width(), f.image_height(), f.image(true), suffix.str()));
+        queue_.push(std::make_tuple(image_width, image_height, image, suffix));
     }
 
 private:

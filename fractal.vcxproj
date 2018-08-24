@@ -13,15 +13,16 @@
   <ItemGroup>
     <ClInclude Include="src\fixed_point.h" />
     <ClInclude Include="src\fractal.h" />
-    <ClInclude Include="src\png.h" />
+    <ClInclude Include="src\png_writer.h" />
     <ClInclude Include="src\timer.h" />
+    <ClInclude Include="src\writer.h" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="src\fractal.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
-    <ClCompile Include="src\png.cpp" />
+    <ClCompile Include="src\png_writer.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{9F2EF4DA-8876-4D27-AD1B-A4C1048CF771}</ProjectGuid>
