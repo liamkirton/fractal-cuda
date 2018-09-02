@@ -148,11 +148,14 @@ public:
         memcpy(&data, &v.data, sizeof(data));
     }
 
-    template<uint32_t I_X>
-    inline __host__ __device__ void set(const fixed_point<I_X, F> &v) {
-        memcpy(&data, &v.data, sizeof(uint32_t) * (((I_X < I) ? I_X : I) + F));
-        if (I_X < I) {
-            memset(&data[I_X + F], (v.bit_get(32 * (I_X + F) - 1) == 1) ? 0xff : 0, sizeof(uint32_t) * (I - I_X));
+    template<uint32_t I_X, uint32_t F_X>
+    inline __host__ __device__ void set(const fixed_point<I_X, F_X> &v) {
+        memset(&data, 0, sizeof(data));
+
+        memcpy(&data[F], &v.data[F_X], sizeof(uint32_t) * ((I <= I_X) ? I : I_X));
+        for (int32_t i = 0; i < F; ++i) {
+            uint32_t t = ((F_X - 1 - i) >= 0) ? v.data[F_X - 1 - i] : 0;
+            data[F - 1 - i] = t;
         }
     }
 

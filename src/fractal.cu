@@ -327,85 +327,85 @@ bool fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> 
         return false;
     }
 
-    //
-    // Calculate Variance
-    //
+    ////
+    //// Calculate Variance
+    ////
 
-    std::vector<std::tuple<double, int32_t, int32_t>> variances;
+    //std::vector<std::tuple<double, int32_t, int32_t>> variances;
 
-    int32_t x_min = 0;
-    int32_t x_max = trial_image_width_;
-    int32_t y_min = 0;
-    int32_t y_max = trial_image_height_;
+    //int32_t x_min = 0;
+    //int32_t x_max = trial_image_width_;
+    //int32_t y_min = 0;
+    //int32_t y_max = trial_image_height_;
 
-    int32_t x_centre = trial_image_width_ / 2;
-    int32_t y_centre = trial_image_width_ / 2;
+    //int32_t x_centre = trial_image_width_ / 2;
+    //int32_t y_centre = trial_image_width_ / 2;
 
-    double escape_max = static_cast<double>(1.0 + params.escape_range_max_ - params.escape_range_min_);
-    constexpr uint32_t block_radius = 5;
+    //double escape_max = static_cast<double>(1.0 + params.escape_range_max_ - params.escape_range_min_);
+    //constexpr uint32_t block_radius = 5;
 
-    bool mid_block_variance = false;
+    //bool mid_block_variance = false;
 
-    for (int32_t y = y_min; y < y_max; ++y) {
-        for (int32_t x = x_min; x < x_max; ++x) {
-            uint32_t block_escapes[block_radius * block_radius]{ 0 };
-            for (int32_t j = 0; j < block_radius * block_radius; ++j) {
-                int32_t r_ix = y - (block_radius / 2) + (j / block_radius);
-                if ((r_ix >= 0) && (r_ix < trial_image_height_)) {
-                    int32_t p_ix = x - (block_radius / 2) + (j % block_radius);
-                    if ((p_ix >= 0) && (p_ix < trial_image_width_)) {
-                        auto &block = preview[r_ix * trial_image_width_ + p_ix];
-                        if (block.escape_ < params.escape_limit_) {
-                            double abs = pow(static_cast<double>(block.re_), 2.0) + pow(static_cast<double>(block.im_), 2.0);
-                            double escape = static_cast<double>(block.escape_) - static_cast<double>(params.escape_range_min_);
-                            double mu = 1.0 + escape - log2(0.5 * log(static_cast<double>(abs)) / log(default_escape_radius));
-                            if (mu < 0.0) mu = 0.0;
+    //for (int32_t y = y_min; y < y_max; ++y) {
+    //    for (int32_t x = x_min; x < x_max; ++x) {
+    //        uint32_t block_escapes[block_radius * block_radius]{ 0 };
+    //        for (int32_t j = 0; j < block_radius * block_radius; ++j) {
+    //            int32_t r_ix = y - (block_radius / 2) + (j / block_radius);
+    //            if ((r_ix >= 0) && (r_ix < trial_image_height_)) {
+    //                int32_t p_ix = x - (block_radius / 2) + (j % block_radius);
+    //                if ((p_ix >= 0) && (p_ix < trial_image_width_)) {
+    //                    auto &block = preview[r_ix * trial_image_width_ + p_ix];
+    //                    if (block.escape_ < params.escape_limit_) {
+    //                        double abs = pow(static_cast<double>(block.re_), 2.0) + pow(static_cast<double>(block.im_), 2.0);
+    //                        double escape = static_cast<double>(block.escape_) - static_cast<double>(params.escape_range_min_);
+    //                        double mu = 1.0 + escape - log2(0.5 * log(static_cast<double>(abs)) / log(default_escape_radius));
+    //                        if (mu < 0.0) mu = 0.0;
 
-                            double delta = max(1.0, sqrt(pow(x_centre - x, 2) + pow(y_centre - y, 2)));
-                            block_escapes[j] = mu / (delta + log(escape_max));
-                        }
-                    }
-                }
-            }
+    //                        double delta = max(1.0, sqrt(pow(x_centre - x, 2) + pow(y_centre - y, 2)));
+    //                        block_escapes[j] = mu / (delta + log(escape_max));
+    //                    }
+    //                }
+    //            }
+    //        }
 
-            double block_mean = 0.0;
-            for (int32_t j = 0; j < block_radius * block_radius; ++j) {
-                block_mean += block_escapes[j];
-            }
-            block_mean /= (block_radius * block_radius);
+    //        double block_mean = 0.0;
+    //        for (int32_t j = 0; j < block_radius * block_radius; ++j) {
+    //            block_mean += block_escapes[j];
+    //        }
+    //        block_mean /= (block_radius * block_radius);
 
-            double block_variance = 0.0;
-            for (int32_t j = 0; j < block_radius * block_radius; ++j) {
-                block_variance += (block_escapes[j] - block_mean) * (block_escapes[j] - block_mean);
-            }
-            block_variance /= (block_radius * block_radius);
+    //        double block_variance = 0.0;
+    //        for (int32_t j = 0; j < block_radius * block_radius; ++j) {
+    //            block_variance += (block_escapes[j] - block_mean) * (block_escapes[j] - block_mean);
+    //        }
+    //        block_variance /= (block_radius * block_radius);
 
-            variances.push_back(std::make_tuple(block_variance, x, y));
+    //        variances.push_back(std::make_tuple(block_variance, x, y));
 
-            if ((x == trial_image_width_ / 2) && (y == trial_image_height_ / 2)) {
-                mid_block_variance = block_variance != 0;
-            }
-        }
-    }
+    //        if ((x == trial_image_width_ / 2) && (y == trial_image_height_ / 2)) {
+    //            mid_block_variance = block_variance != 0;
+    //        }
+    //    }
+    //}
 
-    std::sort(variances.begin(), variances.end(), [](auto a, auto b) { return std::get<0>(a) > std::get<0>(b); });
-    std::remove_if(variances.begin(), variances.end(), [](auto a) { return std::get<0>(a) == 0.0; });
+    //std::sort(variances.begin(), variances.end(), [](auto a, auto b) { return std::get<0>(a) > std::get<0>(b); });
+    //std::remove_if(variances.begin(), variances.end(), [](auto a) { return std::get<0>(a) == 0.0; });
 
-    std::random_device random;
-    std::mt19937 gen(random());
-    std::uniform_int_distribution<> dist(0, variances.size() / 20);
+    //std::random_device random;
+    //std::mt19937 gen(random());
+    //std::uniform_int_distribution<> dist(0, variances.size() / 20);
 
-    auto max = variances.at(dist(gen));
-    double max_variance = std::get<0>(max);
+    //auto max = variances.at(dist(gen));
+    //double max_variance = std::get<0>(max);
 
-    if (!mid_block_variance && (max_variance != 0.0)) {
-        uint32_t max_variance_x = static_cast<uint32_t>(std::get<1>(max));
-        uint32_t max_variance_y = static_cast<uint32_t>(std::get<2>(max));
-        pixel_to_coord(max_variance_x, trial_image_width_, re_max_variance_, max_variance_y, trial_image_height_, im_max_variance_);
-        std::cout << "    [+] Max Variance: " << std::get<0>(max) << " At x: " << max_variance_x << ", y: " << max_variance_y
-            << " => Re: " << std::setprecision(12) << static_cast<double>(re_max_variance_) << ", Im: " << static_cast<double>(im_max_variance_)
-            << std::endl;
-    }
+    //if (!mid_block_variance && (max_variance != 0.0)) {
+    //    uint32_t max_variance_x = static_cast<uint32_t>(std::get<1>(max));
+    //    uint32_t max_variance_y = static_cast<uint32_t>(std::get<2>(max));
+    //    pixel_to_coord(max_variance_x, trial_image_width_, re_max_variance_, max_variance_y, trial_image_height_, im_max_variance_);
+    //    std::cout << "    [+] Max Variance: " << std::get<0>(max) << " At x: " << max_variance_x << ", y: " << max_variance_y
+    //        << " => Re: " << std::setprecision(12) << static_cast<double>(re_max_variance_) << ", Im: " << static_cast<double>(im_max_variance_)
+    //        << std::endl;
+    //}
 
     return true;
 }
