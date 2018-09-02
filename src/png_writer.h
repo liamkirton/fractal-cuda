@@ -4,14 +4,18 @@
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-class png_writer : public writer {
+class png_writer {
 public:
     png_writer(YAML::Node &run_config);
     ~png_writer();
 
-    virtual void write(uint32_t image_width, uint32_t image_height, const uint32_t *image, std::string &suffix, uint64_t ix = 0) {
+    virtual void write(image &i, std::string &suffix, uint64_t ix = 0) {
+        write(i.image_width(), i.image_height(), i.image_buffer(true), suffix, ix);
+    }
+
+    void write(uint32_t image_width, uint32_t image_height, const uint32_t *image_buffer, std::string &suffix, uint64_t ix = 0) {
         std::lock_guard<std::mutex> lock(mutex_);
-        queue_.push(std::make_tuple(image_width, image_height, image, suffix));
+        queue_.push(std::make_tuple(image_width, image_height, image_buffer, suffix));
     }
 
 private:

@@ -152,7 +152,7 @@ public:
     void specify(const T &re, const T &im, const T &scale);
     void specify_julia(const T &re_c, const T &im_c);
 
-    bool generate(bool trial = true, bool image = true);
+    bool generate(bool trial, std::function<void(void)> block_callback = []() {});
 
     uint32_t image_width() {
         return image_width_;
@@ -166,12 +166,8 @@ public:
         return image_width_ * image_height_ * sizeof(uint32_t);
     }
 
-    const uint32_t *image(bool release = false) {
-        uint32_t *image_buffer = image_;
-        if (release) {
-            image_ = nullptr;
-        }
-        return image_buffer;
+    uint32_t *image() {
+        return image_;
     }
 
     double re() {
@@ -209,7 +205,7 @@ public:
     }
 
 private:
-    bool generate(kernel_params<T> &params, bool colour);
+    bool generate(kernel_params<T> &params, bool colour, std::function<void(void)> block_callback);
     void pixel_to_coord(uint32_t x, uint32_t image_width, T &re, uint32_t y, uint32_t image_height, T &im);
     bool process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_block<T> *preview);
 

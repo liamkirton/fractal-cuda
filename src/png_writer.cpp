@@ -23,7 +23,7 @@
 #include <png.h>
 
 #include "fractal.h"
-#include "writer.h"
+#include "image.h"
 #include "png_writer.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -32,7 +32,7 @@ extern HANDLE g_ExitEvent;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-png_writer::png_writer(YAML::Node &run_config) : writer(run_config) {
+png_writer::png_writer(YAML::Node &run_config) {
     directory_ = run_config["image_directory"].as<std::string>();
     prefix_ = run_config["image_name_prefix"].as<std::string>();
     if (prefix_.size() > 0) {

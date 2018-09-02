@@ -15,10 +15,10 @@
     <ClInclude Include="src\timer.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="src\writer.h">
+    <ClInclude Include="src\png_writer.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="src\png_writer.h">
+    <ClInclude Include="src\image.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

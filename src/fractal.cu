@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -152,7 +153,7 @@ void fractal<T>::specify_julia(const T &re_c, const T &im_c) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-bool fractal<T>::generate(bool trial, bool image) {
+bool fractal<T>::generate(bool trial, std::function<void(void)> block_callback) {
     resize(image_width_, image_height_);
 
     kernel_params<T> params_trial(trial_image_width_, trial_image_height_, escape_block_, escape_limit_, 0, re_, im_, scale_, re_c_, im_c_);
@@ -168,7 +169,7 @@ bool fractal<T>::generate(bool trial, bool image) {
 
     if (trial) {
         std::cout << "  [+] Trial " << trial_image_width_ << "x" << trial_image_height_ << std::endl;
-        if (!generate(params_trial, false)) {
+        if (!generate(params_trial, false, []() {})) {
             return false;
         }
 
@@ -181,7 +182,7 @@ bool fractal<T>::generate(bool trial, bool image) {
 
     std::cout << "  [+] Full Image: " << image_width_ << "x" << image_height_ << " (" << image_size() << " bytes)" << std::endl;
 
-    if (!generate(params, true)) {
+    if (!generate(params, true, block_callback)) {
         return false;
     }
 
@@ -191,7 +192,7 @@ bool fractal<T>::generate(bool trial, bool image) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-bool fractal<T>::generate(kernel_params<T> &params, bool colour) {
+bool fractal<T>::generate(kernel_params<T> &params, bool colour, std::function<void(void)> block_callback) {
     kernel_params<T> *params_device{ nullptr };
 
     if (colour && (palette_.size() > 0)) {
@@ -268,6 +269,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool colour) {
             }
 
             cudaMemcpy(&image_[image_chunk], block_device_image_, chunk_groups * cuda_threads_ * sizeof(uint32_t), cudaMemcpyDeviceToHost);
+            block_callback();
         }
     }
 
@@ -679,9 +681,9 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
     r = floor(r * 255); g = floor(g * 255); b = floor(b * 255);
 
     block_image[tid] =
-        (static_cast<unsigned char>(r)) |
+        (static_cast<unsigned char>(b)) |
         (static_cast<unsigned char>(g) << 8) |
-        (static_cast<unsigned char>(b) << 16) |
+        (static_cast<unsigned char>(r) << 16) |
         (255 << 24);
 }
 
