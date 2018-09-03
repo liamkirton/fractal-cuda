@@ -349,49 +349,38 @@ bool run_interactive(run_state &r) {
             break;
         case WM_PAINT:
             {
-                PAINTSTRUCT ps;
-                HDC hdc = BeginPaint(hWnd, &ps);
+                PAINTSTRUCT ps{ 0 };
+                HDC hDC = BeginPaint(hWnd, &ps);
+                HDC hMDC = CreateCompatibleDC(hDC);
+                if (hMDC != NULL) {
+                    BITMAPINFO bi;
+                    ZeroMemory(&bi, sizeof(BITMAPINFO));
+                    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+                    bi.bmiHeader.biWidth = static_cast<LONG>(r.image_width);
+                    bi.bmiHeader.biHeight = -static_cast<LONG>(r.image_height);
+                    bi.bmiHeader.biPlanes = 1;
+                    bi.bmiHeader.biBitCount = 32;
 
-                HDC hmdc = CreateCompatibleDC(hdc);
+                    uint32_t *lpBitmapBits{ nullptr };
+                    HBITMAP hBM = CreateDIBSection(hMDC, &bi, DIB_RGB_COLORS, reinterpret_cast<VOID**>(&lpBitmapBits), NULL, 0);
+                    if (hBM != NULL) {
+                        memcpy(lpBitmapBits, img_buf, sizeof(uint32_t) * r.image_width * r.image_height);
 
-                RECT rect;
-                GetWindowRect(hWnd, &rect);
-
-                uint32_t width = rect.right - rect.left;
-                uint32_t height = rect.bottom - rect.top;
-            
-                BITMAPINFO bi;
-                ZeroMemory(&bi, sizeof(BITMAPINFO));
-                bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-                bi.bmiHeader.biWidth = static_cast<LONG>(width);
-                bi.bmiHeader.biHeight = -static_cast<LONG>(height);
-                bi.bmiHeader.biPlanes = 1;
-                bi.bmiHeader.biBitCount = 32; 
-            
-                uint32_t *lpBitmapBits{ nullptr };
-                HBITMAP hbm = ::CreateDIBSection(hmdc, &bi, DIB_RGB_COLORS, (VOID**)&lpBitmapBits, NULL, 0);
-
-                memcpy(lpBitmapBits, img_buf, sizeof(uint32_t) * width * height);
-                HGDIOBJ old = SelectObject(hmdc, hbm);
-                BitBlt(hdc, 0, 0, width, height, hmdc, 0, 0, SRCCOPY);
-
-                SelectObject(hmdc, old);
-                DeleteObject(hbm);
-                DeleteDC(hmdc);
-
+                        HGDIOBJ hPrev = SelectObject(hMDC, hBM);
+                        BitBlt(hDC, 0, 0, r.image_width, r.image_height, hMDC, 0, 0, SRCCOPY);
+                        SelectObject(hMDC, hPrev);
+                        DeleteObject(hBM);
+                    }
+                    DeleteDC(hMDC);
+                }
                 EndPaint(hWnd, &ps);
             }
             break;
         case WM_LBUTTONUP:
+        case WM_RBUTTONUP: 
         {
             std::lock_guard<std::mutex> lock(mutex);
-            queue.push(std::make_tuple(true, LOWORD(lParam), HIWORD(lParam)));
-            break;
-        }
-        case WM_RBUTTONUP:
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            queue.push(std::make_tuple(false, LOWORD(lParam), HIWORD(lParam)));
+            queue.push(std::make_tuple(uMsg == WM_LBUTTONUP, LOWORD(lParam), HIWORD(lParam)));
             break;
         }
         default:
