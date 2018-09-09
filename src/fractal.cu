@@ -6,6 +6,7 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <random>
 #include <sstream>
@@ -34,16 +35,19 @@ template class fractal<fixed_point<1, 32>>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-__global__ void kernel_init_julia(kernel_block<double> *blocks, kernel_params<double> *params);
-__global__ void kernel_init_mandelbrot(kernel_block<double> *blocks, kernel_params<double> *params);
-__global__ void kernel_iterate(kernel_block<double> *blocks, kernel_params<double> *params);
+__global__ void kernel_init_julia(kernel_chunk<double> *blocks, kernel_params<double> *params);
+__global__ void kernel_init_mandelbrot(kernel_chunk<double> *blocks, kernel_params<double> *params);
+__global__ void kernel_iterate(kernel_chunk<double> *blocks, kernel_params<double> *params);
 
-template<uint32_t I, uint32_t F> __global__ void kernel_init_julia(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params);
-template<uint32_t I, uint32_t F> __global__ void kernel_init_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params);
-template<uint32_t I, uint32_t F> __global__ void kernel_iterate(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params);
+template<uint32_t I, uint32_t F> __global__ void kernel_init_julia(kernel_chunk<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params);
+template<uint32_t I, uint32_t F> __global__ void kernel_init_mandelbrot(kernel_chunk<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params);
+template<uint32_t I, uint32_t F> __global__ void kernel_iterate(kernel_chunk<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params);
 
 template<typename T>
-__global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params, uint32_t *block_image);
+__global__ void kernel_colour(kernel_chunk<T> *blocks, kernel_params<T> *params, uint32_t *block_image);
+
+template<typename T>
+__global__ void kernel_reduce(kernel_chunk<T> *blocks, kernel_params<T> *params, uint32_t chunk_count);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -66,13 +70,13 @@ bool fractal<T>::initialise(uint32_t cuda_groups, uint32_t cuda_threads) {
         return false;
     }
 
-    cudaMalloc(&block_device_, cuda_groups_ * cuda_threads_ * sizeof(kernel_block<T>));
-    if (block_device_ == nullptr) {
+    cudaMalloc(&chunk_buffer_device_, cuda_groups_ * cuda_threads_ * sizeof(kernel_chunk<T>));
+    if (chunk_buffer_device_ == nullptr) {
         return false;
     }
 
-    cudaMalloc(&block_device_image_, cuda_groups_ * cuda_threads_ * sizeof(uint32_t));
-    if (block_device_image_ == nullptr) {
+    cudaMalloc(&image_device_, cuda_groups_ * cuda_threads_ * sizeof(uint32_t));
+    if (image_device_ == nullptr) {
         return false;
     }
 
@@ -84,12 +88,12 @@ bool fractal<T>::initialise(uint32_t cuda_groups, uint32_t cuda_threads) {
 
 template<typename T>
 void fractal<T>::uninitialise() {
-    if (block_device_ != nullptr) {
-        cudaFree(block_device_);
-        block_device_ = nullptr;
+    if (chunk_buffer_device_ != nullptr) {
+        cudaFree(chunk_buffer_device_);
+        chunk_buffer_device_ = nullptr;
     }
-    if (block_device_image_ != nullptr) {
-        block_device_image_ = nullptr;
+    if (image_device_ != nullptr) {
+        image_device_ = nullptr;
     }
     cudaDeviceReset();
 }
@@ -106,9 +110,13 @@ void fractal<T>::resize(const uint32_t image_width, const uint32_t image_height)
             image_ = nullptr;
         }
     }
+    if (chunk_buffer_ == nullptr) {
+        chunk_buffer_ = new kernel_chunk<T>[image_width_ * image_height_];
+    }
     if (image_ == nullptr) {
         image_ = new uint32_t[image_width_ * image_height_];
     }
+    memset(chunk_buffer_, 0, sizeof(kernel_chunk<T>) * image_width_ * image_height_);
     memset(image_, 0, sizeof(uint32_t) * image_width_ * image_height_);
 }
 
@@ -116,8 +124,8 @@ void fractal<T>::resize(const uint32_t image_width, const uint32_t image_height)
 
 template<>
 void fractal<double>::specify(const double &re, const double &im, const double &scale) {
-    re_ = re_max_variance_ = re;
-    im_ = im_max_variance_ = im;
+    re_ = re;
+    im_ = im;
     scale_ = scale;
 }
 
@@ -126,9 +134,7 @@ void fractal<double>::specify(const double &re, const double &im, const double &
 template<typename T>
 void fractal<T>::specify(const T &re, const T &im, const T &scale) {
     re_.set(re);
-    re_max_variance_.set(re);
     im_.set(im);
-    im_max_variance_.set(im);
     scale_.set(scale);
 }
 
@@ -153,13 +159,13 @@ void fractal<T>::specify_julia(const T &re_c, const T &im_c) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-bool fractal<T>::generate(bool trial, std::function<void(void)> block_callback) {
+bool fractal<T>::generate(bool trial, bool interactive, std::function<void(void)> block_callback) {
     resize(image_width_, image_height_);
 
     kernel_params<T> params_trial(trial_image_width_, trial_image_height_, escape_block_, escape_limit_, 0, re_, im_, scale_, re_c_, im_c_);
     kernel_params<T> params(image_width_, image_height_, escape_block_, escape_limit_, colour_method_, re_, im_, scale_, re_c_, im_c_);
 
-    if ((block_device_ == nullptr) || (block_device_image_ == nullptr)) {
+    if ((chunk_buffer_device_ == nullptr) || (image_device_ == nullptr)) {
         return false;
     }
 
@@ -169,12 +175,12 @@ bool fractal<T>::generate(bool trial, std::function<void(void)> block_callback) 
 
     if (trial) {
         std::cout << "  [+] Trial " << trial_image_width_ << "x" << trial_image_height_ << std::endl;
-        if (!generate(params_trial, false, []() {})) {
+        if (!generate(params_trial, false, false, []() {})) {
             return false;
         }
 
-        std::unique_ptr<kernel_block<T>> preview(new kernel_block<T>[trial_image_width_ * trial_image_height_]);
-        cudaMemcpy(preview.get(), block_device_, trial_image_width_ * trial_image_height_ * sizeof(kernel_block<T>), cudaMemcpyDeviceToHost);
+        std::unique_ptr<kernel_chunk<T>> preview(new kernel_chunk<T>[trial_image_width_ * trial_image_height_]);
+        cudaMemcpy(preview.get(), chunk_buffer_device_, trial_image_width_ * trial_image_height_ * sizeof(kernel_chunk<T>), cudaMemcpyDeviceToHost);
         if (!process_trial(params_trial, params, preview.get())) {
             return false;
         }
@@ -182,7 +188,7 @@ bool fractal<T>::generate(bool trial, std::function<void(void)> block_callback) 
 
     std::cout << "  [+] Full Image: " << image_width_ << "x" << image_height_ << " (" << image_size() << " bytes)" << std::endl;
 
-    if (!generate(params, true, block_callback)) {
+    if (!generate(params, true, interactive, block_callback)) {
         return false;
     }
 
@@ -192,9 +198,7 @@ bool fractal<T>::generate(bool trial, std::function<void(void)> block_callback) 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-bool fractal<T>::generate(kernel_params<T> &params, bool colour, std::function<void(void)> block_callback) {
-    kernel_params<T> *params_device{ nullptr };
-
+bool fractal<T>::generate(kernel_params<T> &params, bool colour, bool interactive, std::function<void(void)> block_callback) {
     if (colour && (palette_.size() > 0)) {
         cudaMalloc(&params.palette_, 3 * sizeof(double) * palette_.size());
 
@@ -217,59 +221,134 @@ bool fractal<T>::generate(kernel_params<T> &params, bool colour, std::function<v
         }
     }
 
+    kernel_params<T> *params_device{ nullptr };
     cudaMalloc(&params_device, sizeof(kernel_params<T>));
     if (params_device == nullptr) {
         return false;
     }
 
+    bool chunk_dirty = true;
+    std::map<uint32_t, bool> chunk_status;
+
+    uint32_t chunk_i = 0;
+    uint32_t chunk_count = (params.image_width_ * params.image_height_) / (cuda_groups_ * cuda_threads_);
+    uint32_t escape_i = 0;
+    uint32_t escape_count = escape_limit_ / escape_block_;
+
+    for (uint32_t i = 0; i < chunk_count; ++i) {
+        chunk_status[i] = false;
+    }
+
+    auto next = [&]() {
+        if (interactive) {
+            chunk_i = (chunk_i + 1) % chunk_count;
+            if ((chunk_i == 0) && (++escape_i >= escape_count)) {
+                return false;
+            }
+            chunk_dirty = true;
+        }
+        else {
+            escape_i = (escape_i + 1) % escape_count;
+            if (escape_i == 0) {
+                if (++chunk_i >= chunk_count) {
+                    return false;
+                }
+                chunk_dirty = true;
+            }
+        }
+        return true;
+    };
+
     cudaError_t cudaError{ cudaSuccess };
 
-    for (uint32_t image_chunk = 0; image_chunk < (params.image_width_ * params.image_height_); image_chunk += (cuda_groups_ * cuda_threads_)) {
-        uint32_t chunk_size = std::min((params.image_width_ * params.image_height_) - image_chunk, cuda_groups_ * cuda_threads_);
-        uint32_t chunk_groups = chunk_size / cuda_threads_;
-        cudaMemset(block_device_, 0, cuda_groups_ * cuda_threads_ * sizeof(kernel_block<T>));
+    while (std::any_of(chunk_status.begin(), chunk_status.end(), [](const std::pair<uint32_t, bool> &v) { return !v.second; })) {
+        if (!chunk_status[chunk_i]) {
+            uint32_t image_chunk = chunk_i * cuda_groups_ * cuda_threads_;
+            uint32_t chunk_size = std::min((params.image_width_ * params.image_height_) - image_chunk, cuda_groups_ * cuda_threads_);
+            uint32_t chunk_groups = chunk_size / cuda_threads_;
 
-        for (uint32_t i = 0; i < (escape_limit_ / escape_block_); ++i) {
-            if ((i % 10) == 0) {
-                std::cout << "\r    [+] Chunk: " << image_chunk / (cuda_groups_ * cuda_threads_) << " / "
-                    << params.image_width_ * params.image_height_ / (cuda_groups_ * cuda_threads_)
-                    << ", Block: " << i * escape_block_ << " / " << escape_limit_ << "           " << std::flush;
-            }
+            std::cout << "                                \r    [+] Chunk: " << chunk_i << " / "
+                << params.image_width_ * params.image_height_ / (cuda_groups_ * cuda_threads_)
+                << ", Block: " << escape_i * escape_block_ << " / " << escape_limit_ << std::flush;
+
+            params.escape_i_ = escape_i;
             params.image_chunk_ = image_chunk;
-            params.escape_i_ = i;
-            cudaMemcpy(params_device, &params, sizeof(params), cudaMemcpyHostToDevice);
 
-            if (i == 0) {
+            if ((cudaError = cudaMemcpy(params_device, &params, sizeof(params), cudaMemcpyHostToDevice)) != cudaSuccess) {
+                std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyHostToDevice): " << cudaError << std::endl;
+                break;
+            }
+
+            if (chunk_dirty) {
+                if ((cudaError = cudaMemcpy(chunk_buffer_device_,
+                        &chunk_buffer_[image_chunk],
+                        chunk_groups * cuda_threads_ * sizeof(kernel_chunk<T>),
+                        cudaMemcpyHostToDevice)) != cudaSuccess) {
+                    std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyHostToDevice): " << cudaError << std::endl;
+                    break;
+                }
+                chunk_dirty = false;
+            }
+
+            if (escape_i == 0) {
                 if (julia_) {
-                    kernel_init_julia<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device_, params_device);
+                    kernel_init_julia<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device);
                 }
                 else {
-                    kernel_init_mandelbrot<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device_, params_device);
+                    kernel_init_mandelbrot<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device);
                 }
             }
-            kernel_iterate<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device_, params_device);
+
+            kernel_iterate<<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device);
 
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
-                std::cout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError << std::endl;
+                std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_iterate ]: " << cudaError << std::endl;
                 break;
+            }
+
+            kernel_reduce<<<1, static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device, static_cast<uint32_t>(chunk_groups));
+
+            if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
+                std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_reduce ]: " << cudaError << std::endl;
+                break;
+            }
+
+            if ((cudaError = cudaMemcpy(&chunk_buffer_[image_chunk],
+                    chunk_buffer_device_,
+                    chunk_groups * cuda_threads_ * sizeof(kernel_chunk<T>),
+                    cudaMemcpyDeviceToHost)) != cudaSuccess) {
+                std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
+                break;
+            }
+
+            if (chunk_buffer_[image_chunk].escape_reduce_ == chunk_groups * cuda_threads_) {
+                chunk_status[chunk_i] = true;
+                std::cout << " Complete!";
+            }
+
+            if (colour) {
+                cudaMemset(image_device_, 0, cuda_groups_ * cuda_threads_ * sizeof(uint32_t));
+
+                kernel_colour<T><<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device, image_device_);
+                if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
+                    std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_colour ]: " << cudaError << std::endl;
+                    break;
+                }
+
+                if ((cudaError = cudaMemcpy(&image_[image_chunk],
+                        image_device_,
+                        chunk_groups * cuda_threads_ * sizeof(uint32_t),
+                        cudaMemcpyDeviceToHost)) != cudaSuccess) {
+                    std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
+                    break;
+                }
+
+                block_callback();
             }
         }
 
-        if (cudaError != cudaSuccess) {
+        if (!next()) {
             break;
-        }
-
-        if (colour) {
-            cudaMemset(block_device_image_, 0, cuda_groups_ * cuda_threads_ * sizeof(uint32_t));
-            kernel_colour<T><<<static_cast<uint32_t>(chunk_groups), static_cast<uint32_t>(cuda_threads_)>>>(block_device_, params_device, block_device_image_);
-
-            if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
-                std::cout << std::endl << "[!] cudaDeviceSynchronize(): cudaError: " << cudaError << std::endl;
-                break;
-            }
-
-            cudaMemcpy(&image_[image_chunk], block_device_image_, chunk_groups * cuda_threads_ * sizeof(uint32_t), cudaMemcpyDeviceToHost);
-            block_callback();
         }
     }
 
@@ -303,7 +382,7 @@ void fractal<T>::pixel_to_coord(uint32_t x, uint32_t image_width, T &re, uint32_
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-bool fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_block<T> *preview) {
+bool fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_chunk<T> *preview) {
     //
     // Calculate Escape Range
     //
@@ -327,86 +406,6 @@ bool fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> 
         return false;
     }
 
-    ////
-    //// Calculate Variance
-    ////
-
-    //std::vector<std::tuple<double, int32_t, int32_t>> variances;
-
-    //int32_t x_min = 0;
-    //int32_t x_max = trial_image_width_;
-    //int32_t y_min = 0;
-    //int32_t y_max = trial_image_height_;
-
-    //int32_t x_centre = trial_image_width_ / 2;
-    //int32_t y_centre = trial_image_width_ / 2;
-
-    //double escape_max = static_cast<double>(1.0 + params.escape_range_max_ - params.escape_range_min_);
-    //constexpr uint32_t block_radius = 5;
-
-    //bool mid_block_variance = false;
-
-    //for (int32_t y = y_min; y < y_max; ++y) {
-    //    for (int32_t x = x_min; x < x_max; ++x) {
-    //        uint32_t block_escapes[block_radius * block_radius]{ 0 };
-    //        for (int32_t j = 0; j < block_radius * block_radius; ++j) {
-    //            int32_t r_ix = y - (block_radius / 2) + (j / block_radius);
-    //            if ((r_ix >= 0) && (r_ix < trial_image_height_)) {
-    //                int32_t p_ix = x - (block_radius / 2) + (j % block_radius);
-    //                if ((p_ix >= 0) && (p_ix < trial_image_width_)) {
-    //                    auto &block = preview[r_ix * trial_image_width_ + p_ix];
-    //                    if (block.escape_ < params.escape_limit_) {
-    //                        double abs = pow(static_cast<double>(block.re_), 2.0) + pow(static_cast<double>(block.im_), 2.0);
-    //                        double escape = static_cast<double>(block.escape_) - static_cast<double>(params.escape_range_min_);
-    //                        double mu = 1.0 + escape - log2(0.5 * log(static_cast<double>(abs)) / log(default_escape_radius));
-    //                        if (mu < 0.0) mu = 0.0;
-
-    //                        double delta = max(1.0, sqrt(pow(x_centre - x, 2) + pow(y_centre - y, 2)));
-    //                        block_escapes[j] = mu / (delta + log(escape_max));
-    //                    }
-    //                }
-    //            }
-    //        }
-
-    //        double block_mean = 0.0;
-    //        for (int32_t j = 0; j < block_radius * block_radius; ++j) {
-    //            block_mean += block_escapes[j];
-    //        }
-    //        block_mean /= (block_radius * block_radius);
-
-    //        double block_variance = 0.0;
-    //        for (int32_t j = 0; j < block_radius * block_radius; ++j) {
-    //            block_variance += (block_escapes[j] - block_mean) * (block_escapes[j] - block_mean);
-    //        }
-    //        block_variance /= (block_radius * block_radius);
-
-    //        variances.push_back(std::make_tuple(block_variance, x, y));
-
-    //        if ((x == trial_image_width_ / 2) && (y == trial_image_height_ / 2)) {
-    //            mid_block_variance = block_variance != 0;
-    //        }
-    //    }
-    //}
-
-    //std::sort(variances.begin(), variances.end(), [](auto a, auto b) { return std::get<0>(a) > std::get<0>(b); });
-    //std::remove_if(variances.begin(), variances.end(), [](auto a) { return std::get<0>(a) == 0.0; });
-
-    //std::random_device random;
-    //std::mt19937 gen(random());
-    //std::uniform_int_distribution<> dist(0, variances.size() / 20);
-
-    //auto max = variances.at(dist(gen));
-    //double max_variance = std::get<0>(max);
-
-    //if (!mid_block_variance && (max_variance != 0.0)) {
-    //    uint32_t max_variance_x = static_cast<uint32_t>(std::get<1>(max));
-    //    uint32_t max_variance_y = static_cast<uint32_t>(std::get<2>(max));
-    //    pixel_to_coord(max_variance_x, trial_image_width_, re_max_variance_, max_variance_y, trial_image_height_, im_max_variance_);
-    //    std::cout << "    [+] Max Variance: " << std::get<0>(max) << " At x: " << max_variance_x << ", y: " << max_variance_y
-    //        << " => Re: " << std::setprecision(12) << static_cast<double>(re_max_variance_) << ", Im: " << static_cast<double>(im_max_variance_)
-    //        << std::endl;
-    //}
-
     return true;
 }
 
@@ -416,7 +415,7 @@ bool fractal<T>::process_trial(kernel_params<T> &params_trial, kernel_params<T> 
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-__global__ void kernel_init_julia(kernel_block<double> *blocks, kernel_params<double> *params) {
+__global__ void kernel_init_julia(kernel_chunk<double> *chunks, kernel_params<double> *params) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     const double pixel_x = (params->image_chunk_ + tid) % params->image_width_;
@@ -425,17 +424,17 @@ __global__ void kernel_init_julia(kernel_block<double> *blocks, kernel_params<do
     const double re_c = params->re_ + (re_min + pixel_x * (re_max - re_min) / params->image_width_) * params->scale_;
     const double im_c = params->im_ + (im_max - pixel_y * (im_max - im_min) / params->image_height_) * params->scale_;
 
-    kernel_block<double> *block = &blocks[tid];
-    block->escape_ = params->escape_limit_;
-    block->re_c_ = params->re_c_;
-    block->im_c_ = params->im_c_;
-    block->re_ = re_c;
-    block->im_ = im_c;
+    kernel_chunk<double> *chunk = &chunks[tid];
+    chunk->escape_ = params->escape_limit_;
+    chunk->re_c_ = params->re_c_;
+    chunk->im_c_ = params->im_c_;
+    chunk->re_ = re_c;
+    chunk->im_ = im_c;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-__global__ void kernel_init_mandelbrot(kernel_block<double> *blocks, kernel_params<double> *params) {
+__global__ void kernel_init_mandelbrot(kernel_chunk<double> *chunks, kernel_params<double> *params) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     const double pixel_x = (params->image_chunk_ + tid) % params->image_width_;
@@ -444,28 +443,76 @@ __global__ void kernel_init_mandelbrot(kernel_block<double> *blocks, kernel_para
     const double re_c = params->re_ + (re_min + pixel_x * (re_max - re_min) / params->image_width_) * params->scale_;
     const double im_c = params->im_ + (im_max - pixel_y * (im_max - im_min) / params->image_height_) * params->scale_;
 
-    kernel_block<double> *block = &blocks[tid];
-    block->escape_ = params->escape_limit_;
-    block->re_c_ = re_c; 
-    block->im_c_ = im_c; 
-    block->re_ = re_c;
-    block->im_ = im_c;
+    kernel_chunk<double> *chunk = &chunks[tid];
+    chunk->escape_ = params->escape_limit_;
+    chunk->re_c_ = re_c; 
+    chunk->im_c_ = im_c; 
+    chunk->re_ = re_c;
+    chunk->im_ = im_c;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-__global__ void kernel_iterate(kernel_block<double> *blocks, kernel_params<double> *params) {
+template<uint32_t I, uint32_t F>
+__global__ void kernel_init_julia(kernel_chunk<fixed_point<I, F>> *chunks, kernel_params<fixed_point<I, F>> *params) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-    kernel_block<double> *block = &blocks[tid];
-    double re_c = block->re_c_;
-    double im_c = block->im_c_;
-    double re = block->re_;
-    double im = block->im_;
+    const double pixel_x = (params->image_chunk_ + tid) % params->image_width_;
+    const double pixel_y = (params->image_chunk_ + tid) / params->image_width_;
+
+    fixed_point<I, F> re_c(re_min + pixel_x * (re_max - re_min) / params->image_width_);
+    fixed_point<I, F> im_c(im_max - pixel_y * (im_max - im_min) / params->image_height_);
+    re_c.multiply(params->scale_);
+    im_c.multiply(params->scale_);
+    re_c.add(params->re_);
+    im_c.add(params->im_);
+
+    kernel_chunk<fixed_point<I, F>> *chunk = &chunks[tid];
+    chunk->escape_ = params->escape_limit_;
+    chunk->re_c_.set(params->re_c_);
+    chunk->im_c_.set(params->im_c_);
+    chunk->re_.set(re_c);
+    chunk->im_.set(im_c);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<uint32_t I, uint32_t F>
+__global__ void kernel_init_mandelbrot(kernel_chunk<fixed_point<I, F>> *chunks, kernel_params<fixed_point<I, F>> *params) {
+    const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
+
+    const double pixel_x = (params->image_chunk_ + tid) % params->image_width_;
+    const double pixel_y = (params->image_chunk_ + tid) / params->image_width_;
+
+    fixed_point<I, F> re_c(re_min + pixel_x * (re_max - re_min) / params->image_width_);
+    fixed_point<I, F> im_c(im_max - pixel_y * (im_max - im_min) / params->image_height_);
+    re_c.multiply(params->scale_);
+    im_c.multiply(params->scale_);
+    re_c.add(params->re_);
+    im_c.add(params->im_);
+
+    kernel_chunk<fixed_point<I, F>> *chunk = &chunks[tid];
+    chunk->escape_ = params->escape_limit_;
+    chunk->re_c_.set(re_c);
+    chunk->im_c_.set(im_c);
+    chunk->re_.set(re_c);
+    chunk->im_.set(im_c);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+__global__ void kernel_iterate(kernel_chunk<double> *chunks, kernel_params<double> *params) {
+    const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
+
+    kernel_chunk<double> *chunk = &chunks[tid];
+    double re_c = chunk->re_c_;
+    double im_c = chunk->im_c_;
+    double re = chunk->re_;
+    double im = chunk->im_;
     double re_prod = re * re;
     double im_prod = im * im;
 
-    const uint64_t escape = block->escape_;
+    const uint64_t escape = chunk->escape_;
     const uint64_t escape_block = params->escape_block_;
     const uint64_t escape_limit = params->escape_limit_;
 
@@ -476,74 +523,26 @@ __global__ void kernel_iterate(kernel_block<double> *blocks, kernel_params<doubl
             re_prod = re * re;
             im_prod = im * im;
             if ((re_prod + im_prod) >= default_escape_radius_square) {
-                block->escape_ = i + params->escape_i_ * escape_block;
+                chunk->escape_ = i + params->escape_i_ * escape_block;
                 break;
             }
         }
 
-        block->re_ = re;
-        block->im_ = im;
+        chunk->re_ = re;
+        chunk->im_ = im;
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<uint32_t I, uint32_t F>
-__global__ void kernel_init_julia(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params) {
-    const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
+__global__ void kernel_iterate(kernel_chunk<fixed_point<I, F>> *chunks, kernel_params<fixed_point<I, F>> *params) {
+    kernel_chunk<fixed_point<I, F>> *chunk = &chunks[threadIdx.x + blockIdx.x * blockDim.x];
 
-    const double pixel_x = (params->image_chunk_ + tid) % params->image_width_;
-    const double pixel_y = (params->image_chunk_ + tid) / params->image_width_;
+    fixed_point<I, F> re(chunk->re_);
+    fixed_point<I, F> im(chunk->im_);
 
-    fixed_point<I, F> re_c(re_min + pixel_x * (re_max - re_min) / params->image_width_);
-    fixed_point<I, F> im_c(im_max - pixel_y * (im_max - im_min) / params->image_height_);
-    re_c.multiply(params->scale_);
-    im_c.multiply(params->scale_);
-    re_c.add(params->re_);
-    im_c.add(params->im_);
-
-    kernel_block<fixed_point<I, F>> *block = &blocks[tid];
-    block->escape_ = params->escape_limit_;
-    block->re_c_.set(params->re_c_);
-    block->im_c_.set(params->im_c_);
-    block->re_.set(re_c);
-    block->im_.set(im_c);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<uint32_t I, uint32_t F>
-__global__ void kernel_init_mandelbrot(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params) {
-    const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
-
-    const double pixel_x = (params->image_chunk_ + tid) % params->image_width_;
-    const double pixel_y = (params->image_chunk_ + tid) / params->image_width_;
-
-    fixed_point<I, F> re_c(re_min + pixel_x * (re_max - re_min) / params->image_width_);
-    fixed_point<I, F> im_c(im_max - pixel_y * (im_max - im_min) / params->image_height_);
-    re_c.multiply(params->scale_);
-    im_c.multiply(params->scale_);
-    re_c.add(params->re_);
-    im_c.add(params->im_);
-
-    kernel_block<fixed_point<I, F>> *block = &blocks[tid];
-    block->escape_ = params->escape_limit_;
-    block->re_c_.set(re_c);
-    block->im_c_.set(im_c);
-    block->re_.set(re_c);
-    block->im_.set(im_c);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<uint32_t I, uint32_t F>
-__global__ void kernel_iterate(kernel_block<fixed_point<I, F>> *blocks, kernel_params<fixed_point<I, F>> *params) {
-    kernel_block<fixed_point<I, F>> *block = &blocks[threadIdx.x + blockIdx.x * blockDim.x];
-
-    fixed_point<I, F> re(block->re_);
-    fixed_point<I, F> im(block->im_);
-
-    const uint64_t escape = block->escape_;
+    const uint64_t escape = chunk->escape_;
     const uint64_t escape_block = params->escape_block_;
     const uint64_t escape_limit = params->escape_limit_;
 
@@ -556,42 +555,42 @@ __global__ void kernel_iterate(kernel_block<fixed_point<I, F>> *blocks, kernel_p
         for (uint64_t i = 0; i < escape_block; ++i) {
             im.multiply(re);
             im.multiply(2ULL);
-            im.add(block->im_c_);
+            im.add(chunk->im_c_);
 
             re.set(im_prod);
             re.negate();
             re.add(re_prod);
-            re.add(block->re_c_);
+            re.add(chunk->re_c_);
 
             re.multiply(re, re_prod);
             im.multiply(im, im_prod);
 
             if ((static_cast<double>(re_prod) + static_cast<double>(im_prod)) >= default_escape_radius_square) {
-                block->escape_ = i + params->escape_i_ * escape_block;
+                chunk->escape_ = i + params->escape_i_ * escape_block;
                 break;
             }
         }
 
-        block->re_.set(re);
-        block->im_.set(im);
+        chunk->re_.set(re);
+        chunk->im_.set(im);
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-__global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params, uint32_t *block_image) {
+__global__ void kernel_colour(kernel_chunk<T> *chunks, kernel_params<T> *params, uint32_t *block_image) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-    kernel_block<T> *block = &blocks[tid];
+    kernel_chunk<T> *chunk = &chunks[tid];
 
     double hue = params->set_hue_;
     double sat = params->set_sat_;
     double val = params->set_val_;
 
-    if (block->escape_ < params->escape_limit_) {
-        double abs = pow(static_cast<double>(block->re_), 2.0) + pow(static_cast<double>(block->im_), 2.0);
-        double escape = static_cast<double>(block->escape_) - static_cast<double>(params->escape_range_min_);
+    if (chunk->escape_ < params->escape_limit_) {
+        double abs = pow(static_cast<double>(chunk->re_), 2.0) + pow(static_cast<double>(chunk->im_), 2.0);
+        double escape = static_cast<double>(chunk->escape_) - static_cast<double>(params->escape_range_min_);
         double escape_max = static_cast<double>(1.0 + params->escape_range_max_ - params->escape_range_min_);
 
         double mu = 1.0 + escape - log2(0.5 * log(abs) / log(default_escape_radius));
@@ -685,6 +684,33 @@ __global__ void kernel_colour(kernel_block<T> *blocks, kernel_params<T> *params,
         (static_cast<unsigned char>(g) << 8) |
         (static_cast<unsigned char>(r) << 16) |
         (255 << 24);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename T>
+__global__ void kernel_reduce(kernel_chunk<T> *chunks, kernel_params<T> *params, uint32_t chunk_count) {
+    kernel_chunk<T> *block = &chunks[threadIdx.x];
+
+    uint64_t escape_reduce = 0;
+    for (uint32_t i = 0; i < chunk_count; ++i) {
+        if (chunks[threadIdx.x + i * blockDim.x].escape_ < params->escape_limit_) {
+            escape_reduce++;
+        }
+    }
+    block->escape_reduce_ = escape_reduce;
+
+    __syncthreads();
+
+    if (threadIdx.x == 0) {
+        escape_reduce = 0;
+        for (uint32_t i = 0; i < blockDim.x; ++i) {
+            escape_reduce += chunks[i].escape_reduce_;
+        }
+        block->escape_reduce_ = escape_reduce;
+    }
+
+    __syncthreads();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

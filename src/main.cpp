@@ -56,6 +56,7 @@ struct run_state {
     uint32_t cuda_groups;
     uint32_t cuda_threads;
 
+    bool interactive;
     bool trial;
     uint32_t colour_method;
 
@@ -263,6 +264,7 @@ void create_run_state(run_state &r, YAML::Node &run_config) {
     r.cuda_groups = r.run_config["cuda_groups"].as<uint32_t>();
     r.cuda_threads = r.run_config["cuda_threads"].as<uint32_t>();
 
+    r.interactive = r.run_config["interactive"].as<bool>();
     r.trial = r.run_config["trial"].as<bool>();
 }
 
@@ -286,8 +288,8 @@ bool run_interactive(run_state &r) {
     std::queue<std::tuple<bool, uint64_t, uint64_t>> queue;
     queue.push(std::make_tuple(false, r.image_width / 2, r.image_height / 2));
 
-    uint32_t *img_buf = new uint32_t[r.image_width * r.image_height];
-    memset(img_buf, 0, sizeof(uint32_t) * r.image_width * r.image_height);
+    uint32_t *image_buffer = new uint32_t[r.image_width * r.image_height];
+    memset(image_buffer, 0, sizeof(uint32_t) * r.image_width * r.image_height);
 
     auto gen_thread = std::thread([&]() {
         while (true) {
@@ -333,7 +335,7 @@ bool run_interactive(run_state &r) {
             r.skip = skip >= 0 ? skip : 0;
 
             run_generate(r, [&](bool complete, image &i, std::string &suffix, uint32_t ix) {
-                memcpy(img_buf, i.image_buffer(), sizeof(uint32_t) * r.image_width * r.image_height);
+                memcpy(image_buffer, i.image_buffer(), sizeof(uint32_t) * r.image_width * r.image_height);
                 InvalidateRect(hWnd, NULL, TRUE);
             });
         }
@@ -364,7 +366,7 @@ bool run_interactive(run_state &r) {
                     uint32_t *lpBitmapBits{ nullptr };
                     HBITMAP hBM = CreateDIBSection(hMDC, &bi, DIB_RGB_COLORS, reinterpret_cast<VOID**>(&lpBitmapBits), NULL, 0);
                     if (hBM != NULL) {
-                        memcpy(lpBitmapBits, img_buf, sizeof(uint32_t) * r.image_width * r.image_height);
+                        memcpy(lpBitmapBits, image_buffer, sizeof(uint32_t) * r.image_width * r.image_height);
 
                         HGDIOBJ hPrev = SelectObject(hMDC, hBM);
                         BitBlt(hDC, 0, 0, r.image_width, r.image_height, hMDC, 0, 0, SRCCOPY);
@@ -393,6 +395,7 @@ bool run_interactive(run_state &r) {
     wc.cbSize = sizeof(wc);
     wc.cbClsExtra = 0; 
     wc.cbWndExtra = sizeof(size_t);
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW); 
     wc.hInstance = GetModuleHandle(NULL);
     wc.lpszClassName = "fractal_interactive";
     wc.style = CS_HREDRAW | CS_VREDRAW;
@@ -551,7 +554,7 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
     };
 
     timer gen_timer;
-    if (f.generate(r.trial, [&]() { do_callback(false); })) {
+    if (f.generate(r.trial, r.interactive, [&]() { do_callback(false); })) {
         gen_timer.stop();
         gen_timer.print();
         do_callback(true);
@@ -606,7 +609,7 @@ template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::v
     };
 
     timer gen_timer;
-    if (f.generate(r.trial  , [&]() { do_callback(false); })) {
+    if (f.generate(r.trial, r.interactive, [&]() { do_callback(false); })) {
         gen_timer.stop();
         gen_timer.print();
         do_callback(true);

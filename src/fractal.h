@@ -9,8 +9,9 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-struct kernel_block {
+struct kernel_chunk {
     uint64_t escape_;
+    uint64_t escape_reduce_;
     T re_c_;
     T im_c_;
     T re_;
@@ -109,13 +110,12 @@ public:
     }
 
     fractal(const uint32_t image_width, const uint32_t image_height, uint64_t escape_block, uint64_t escape_limit, uint32_t cuda_groups, uint32_t cuda_threads) :
-            image_(nullptr),
+            image_(nullptr), chunk_buffer_(nullptr),
             image_width_(image_width), image_height_(image_height),
             trial_image_width_(cuda_threads), trial_image_height_(cuda_groups),
             cuda_groups_(cuda_groups), cuda_threads_(cuda_threads),
             escape_block_(escape_block), escape_limit_(escape_limit),
             colour_method_(0),
-            max_variance_(0.0), re_max_variance_(0.0), im_max_variance_(0.0),
             julia_(false), re_c_(0), im_c_(0) {
         initialise();
         specify(0.0, 0.0, 1.0);
@@ -152,7 +152,7 @@ public:
     void specify(const T &re, const T &im, const T &scale);
     void specify_julia(const T &re_c, const T &im_c);
 
-    bool generate(bool trial, std::function<void(void)> block_callback = []() {});
+    bool generate(bool trial, bool interactive, std::function<void(void)> block_callback = []() {});
 
     uint32_t image_width() {
         return image_width_;
@@ -196,18 +196,10 @@ public:
         return static_cast<double>(scale_);
     }
 
-    T &re_max_variance() {
-        return re_max_variance_;
-    }
-
-    T &im_max_variance() {
-        return im_max_variance_;
-    }
-
 private:
-    bool generate(kernel_params<T> &params, bool colour, std::function<void(void)> block_callback);
+    bool generate(kernel_params<T> &params, bool colour, bool interactive, std::function<void(void)> block_callback);
     void pixel_to_coord(uint32_t x, uint32_t image_width, T &re, uint32_t y, uint32_t image_height, T &im);
-    bool process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_block<T> *preview);
+    bool process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_chunk<T> *preview);
 
 private:
     uint32_t cuda_groups_;
@@ -231,13 +223,11 @@ private:
     T re_c_;
     T im_c_;
 
-    double max_variance_;
-    T re_max_variance_;
-    T im_max_variance_;
+    kernel_chunk<T> *chunk_buffer_;
+    kernel_chunk<T> *chunk_buffer_device_; 
 
     uint32_t *image_;
-    kernel_block<T> *block_device_;
-    uint32_t *block_device_image_;
+    uint32_t *image_device_; 
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
