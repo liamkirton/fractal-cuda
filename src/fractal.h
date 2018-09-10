@@ -12,6 +12,8 @@ template<typename T>
 struct kernel_chunk {
     uint64_t escape_;
     uint64_t escape_reduce_;
+    uint64_t escape_reduce_min_;
+    uint64_t escape_reduce_max_;
     T re_c_;
     T im_c_;
     T re_;
@@ -152,7 +154,7 @@ public:
     void specify(const T &re, const T &im, const T &scale);
     void specify_julia(const T &re_c, const T &im_c);
 
-    bool generate(bool trial, bool interactive, std::function<void(void)> block_callback = []() {});
+    bool generate(bool trial, bool interactive, std::function<bool(void)> callback = []() {});
 
     uint32_t image_width() {
         return image_width_;
@@ -197,7 +199,7 @@ public:
     }
 
 private:
-    bool generate(kernel_params<T> &params, bool colour, bool interactive, std::function<void(void)> block_callback);
+    bool generate(kernel_params<T> &params, bool interactive, std::function<bool(void)> callback);
     void pixel_to_coord(uint32_t x, uint32_t image_width, T &re, uint32_t y, uint32_t image_height, T &im);
     bool process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_chunk<T> *preview);
 

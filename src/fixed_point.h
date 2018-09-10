@@ -154,7 +154,7 @@ public:
 
         memcpy(&data[F], &v.data[F_X], sizeof(uint32_t) * ((I <= I_X) ? I : I_X));
         for (int32_t i = 0; i < F; ++i) {
-            uint32_t t = ((F_X - 1 - i) >= 0) ? v.data[F_X - 1 - i] : 0;
+            uint32_t t = ((static_cast<int32_t>(F_X) - 1 - i) >= 0) ? v.data[F_X - 1 - i] : 0;
             data[F - 1 - i] = t;
         }
     }

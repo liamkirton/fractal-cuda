@@ -11,6 +11,7 @@ os.chdir(os.path.join(os.path.split(__file__)[0], '..'))
 parser = argparse.ArgumentParser()
 parser.add_argument('-c', '--count', type=int, default=16)
 parser.add_argument('-i', '--interactive', action='store_true', default=False)
+parser.add_argument('--4k', action='store_true', default=False)
 args = parser.parse_args()
 
 try:
@@ -35,6 +36,8 @@ try:
             '-scale', scale
         ]
 
+        if getattr(args, '4k'):
+            fractal_cmd.extend(['-image_width', '3840', '-image_height', '2160'])
         if args.interactive:
             fractal_cmd.extend(['-interactive', 'true'])
 

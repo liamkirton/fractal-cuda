@@ -72,9 +72,9 @@ void create_run_state(run_state &r, YAML::Node &run_config);
 bool run(run_state &r);
 bool run_interactive(run_state &r);
 
-bool run_generate(run_state &r, std::function<void(bool, image &, std::string &, uint32_t)> image_callback);
-template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<void(bool, image &, std::string &, uint32_t)> image_callback);
-template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<void(bool, image &, std::string &, uint32_t)> image_callback);
+bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &, uint32_t)> callback);
+template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback);
+template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback);
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -125,66 +125,33 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (default_config["interactive"].as<bool>()) {
-        YAML::Node interactive_config = default_config;
-        for (auto &f : inst_config_files) {
-            YAML::Node load_config;
-            try {
-                load_config = YAML::LoadFile(f);
-            }
-            catch (YAML::BadFile &) {
-                std::cout << "[!] ERROR: Cannot Load " << f << std::endl;
-                continue;
-            }
-            catch (YAML::ParserException &) {
-                std::cout << "[!] ERROR: Cannot Parse " << f << std::endl;
-                continue;
-            }
-            for (auto &c : load_config) {
-                interactive_config[c.first.as<std::string>()] = c.second;
-            }
+    YAML::Node run_config = default_config;
+    for (auto &f : inst_config_files) {
+        YAML::Node load_config;
+        try {
+            load_config = YAML::LoadFile(f);
         }
+        catch (YAML::BadFile &) {
+            std::cout << "[!] ERROR: Cannot Load " << f << std::endl;
+            continue;
+        }
+        catch (YAML::ParserException &) {
+            std::cout << "[!] ERROR: Cannot Parse " << f << std::endl;
+            continue;
+        }
+        for (auto &c : load_config) {
+            run_config[c.first.as<std::string>()] = c.second;
+        }
+    }
 
-        run_state r;
-        create_run_state(r, interactive_config);
+    run_state r;
+    create_run_state(r, run_config);
+
+    if (run_config["interactive"].as<bool>()) {
         run_interactive(r);
     }
     else {
-        try {
-            if (inst_config_files.size() == 0) {
-                inst_config_files.push_back("");
-            }
-
-            for (auto &f : inst_config_files) {
-                YAML::Node load_config;
-
-                if (f.size() > 0) {
-                    try {
-                        load_config = YAML::LoadFile(f);
-                    }
-                    catch (YAML::BadFile &) {
-                        std::cout << "[!] ERROR: Cannot Load " << f << std::endl;
-                        continue;
-                    }
-                    catch (YAML::ParserException &) {
-                        std::cout << "[!] ERROR: Cannot Parse " << f << std::endl;
-                        continue;
-                    }
-                }
-
-                YAML::Node run_config = default_config;
-                for (auto &c : load_config) {
-                    run_config[c.first.as<std::string>()] = c.second;
-                }
-
-                run_state r;
-                create_run_state(r, run_config);
-                run(r);
-            }
-        }
-        catch (std::exception &e) {
-            std::cout << "[!] ERROR: Caught Unexpected Exception - " << e.what() << std::endl;
-        }
+        run(r);
     }
 
     return 0;
@@ -276,12 +243,14 @@ bool run(run_state &r) {
         if (complete) {
             png->write(i, suffix, ix);
         }
+        return true;
     });
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool run_interactive(run_state &r) {
+    HANDLE hExitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     HWND hWnd{ nullptr };
 
     std::mutex mutex;
@@ -292,9 +261,8 @@ bool run_interactive(run_state &r) {
     memset(image_buffer, 0, sizeof(uint32_t) * r.image_width * r.image_height);
 
     auto gen_thread = std::thread([&]() {
-        while (true) {
+        while (WaitForSingleObject(hExitEvent, 500) != WAIT_OBJECT_0) {
             std::tuple<bool, uint64_t, uint64_t> coords{ false, 0, 0 };
-            Sleep(1000);
             {
                 std::lock_guard<std::mutex> lock(mutex);
                 if (queue.empty()) {
@@ -335,8 +303,12 @@ bool run_interactive(run_state &r) {
             r.skip = skip >= 0 ? skip : 0;
 
             run_generate(r, [&](bool complete, image &i, std::string &suffix, uint32_t ix) {
-                memcpy(image_buffer, i.image_buffer(), sizeof(uint32_t) * r.image_width * r.image_height);
+                const uint32_t *src_buffer = i.image_buffer();
+                for (uint32_t i = 0; i < r.image_width * r.image_height; ++i) {
+                    image_buffer[i] = (src_buffer[i] & 0xff00ff00) | ((src_buffer[i] & 0xff) << 16) | ((src_buffer[i] & 0xff0000) >> 16);
+                }
                 InvalidateRect(hWnd, NULL, TRUE);
+                return queue.empty();
             });
         }
     });
@@ -362,7 +334,7 @@ bool run_interactive(run_state &r) {
                     bi.bmiHeader.biHeight = -static_cast<LONG>(r.image_height);
                     bi.bmiHeader.biPlanes = 1;
                     bi.bmiHeader.biBitCount = 32;
-
+                    
                     uint32_t *lpBitmapBits{ nullptr };
                     HBITMAP hBM = CreateDIBSection(hMDC, &bi, DIB_RGB_COLORS, reinterpret_cast<VOID**>(&lpBitmapBits), NULL, 0);
                     if (hBM != NULL) {
@@ -439,13 +411,16 @@ bool run_interactive(run_state &r) {
         DispatchMessage(&msg);
     }
 
+    SetEvent(hExitEvent);
     gen_thread.join();
+    CloseHandle(hExitEvent);
+
     return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool run_generate(run_state &r, std::function<void(bool, image &, std::string &, uint32_t)> image_callback) {
+bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
     std::vector<std::tuple<double, double, double>> palette = create_palette(r);
 
     fixed_point<2, 32> scale(r.scale);
@@ -460,40 +435,40 @@ bool run_generate(run_state &r, std::function<void(bool, image &, std::string &,
                 << "  [+] Precison Bit: " << precision_bit;
 
             if (precision_bit < 53) {
-                run_step<0, 0>(r, i, palette, image_callback);
+                run_step<0, 0>(r, i, palette, callback);
             }
             else if (precision_bit < 32 * 2) {
-                run_step<1, 2>(r, i, palette, image_callback);
+                run_step<1, 2>(r, i, palette, callback);
             }
             else if (precision_bit < 32 * 3) {
-                run_step<1, 3>(r, i, palette, image_callback);
+                run_step<1, 3>(r, i, palette, callback);
             }
             else if (precision_bit < 32 * 4) {
-                run_step<1, 4>(r, i, palette, image_callback);
+                run_step<1, 4>(r, i, palette, callback);
             }
             else if (precision_bit < 32 * 6) {
-                run_step<1, 6>(r, i, palette, image_callback);
+                run_step<1, 6>(r, i, palette, callback);
             }
             else if (precision_bit < 32 * 8) {
-                run_step<1, 8>(r, i, palette, image_callback);
+                run_step<1, 8>(r, i, palette, callback);
             }
             else if (precision_bit < 32 * 12) {
-                run_step<1, 12>(r, i, palette, image_callback);
+                run_step<1, 12>(r, i, palette, callback);
             }
             else if (precision_bit < 32 * 16) {
-                run_step<1, 16>(r, i, palette, image_callback);
+                run_step<1, 16>(r, i, palette, callback);
             }
             else if (precision_bit < 32 * 20) {
-                run_step<1, 20>(r, i, palette, image_callback);
+                run_step<1, 20>(r, i, palette, callback);
             }
             else if (precision_bit < 32 * 24) {
-                run_step<1, 24>(r, i, palette, image_callback);
+                run_step<1, 24>(r, i, palette, callback);
             }
             else if (precision_bit < 32 * 28) {
-                run_step<1, 28>(r, i, palette, image_callback);
+                run_step<1, 28>(r, i, palette, callback);
             }
             else if (precision_bit < 32 * 32) {
-                run_step<1, 32>(r, i, palette, image_callback);
+                run_step<1, 32>(r, i, palette, callback);
             }
             else {
                 std::cout << " - UNSUPPORTED" << std::endl;
@@ -510,7 +485,7 @@ bool run_generate(run_state &r, std::function<void(bool, image &, std::string &,
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<void(bool, image &, std::string &, uint32_t)> image_callback) {
+template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
     fractal<double> f(r.image_width, r.image_height);
     if ((r.cuda_groups != 0) && (r.cuda_threads != 0)) {
         f.initialise(r.cuda_groups, r.cuda_threads);
@@ -550,11 +525,11 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
 
     auto do_callback = [&](bool complete) {
         image i(f.image_width(), f.image_height(), f.image());
-        image_callback(complete, i, suffix.str(), ix);
+        return callback(complete, i, suffix.str(), ix);
     };
 
     timer gen_timer;
-    if (f.generate(r.trial, r.interactive, [&]() { do_callback(false); })) {
+    if (f.generate(r.trial, r.interactive, [&]() { return do_callback(false); })) {
         gen_timer.stop();
         gen_timer.print();
         do_callback(true);
@@ -565,7 +540,7 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<void(bool, image &i, std::string &suffix, uint32_t ix)> image_callback) {
+template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
     fractal<fixed_point<I, F>> f(r.image_width, r.image_height);
     if ((r.cuda_groups != 0) && (r.cuda_threads != 0)) {
         f.initialise(r.cuda_groups, r.cuda_threads);
@@ -605,11 +580,11 @@ template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::v
 
     auto do_callback = [&](bool complete) {
         image i(f.image_width(), f.image_height(), f.image());
-        image_callback(complete, i, suffix.str(), ix);
+        return callback(complete, i, suffix.str(), ix);
     };
 
     timer gen_timer;
-    if (f.generate(r.trial, r.interactive, [&]() { do_callback(false); })) {
+    if (f.generate(r.trial, r.interactive, [&]() { return do_callback(false); })) {
         gen_timer.stop();
         gen_timer.print();
         do_callback(true);
