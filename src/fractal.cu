@@ -393,9 +393,9 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
             }
 
             if ((cudaError = cudaMemcpy(&image_[chunk_offset],
-                image_device_,
-                chunk_cuda_groups * cuda_threads_ * sizeof(uint32_t),
-                cudaMemcpyDeviceToHost)) != cudaSuccess) {
+                    image_device_,
+                    chunk_cuda_groups * cuda_threads_ * sizeof(uint32_t),
+                    cudaMemcpyDeviceToHost)) != cudaSuccess) {
                 std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
                 break;
             }
@@ -668,12 +668,32 @@ __global__ void kernel_colour(kernel_chunk<T> *chunks, kernel_params<T> *params,
             break;
         case 4:
         case 5:
+            {
+                if (mu < 2.71828182846) {
+                    mu = 2.71828182846;
+                }
+                double t = log(escape_max) / log(mu);
+                t = t - floor(t);
+                hue = 0.0;
+                sat = 0.0;
+                val = 0.0;
+                for (uint32_t i = 0; i < params->palette_count_; ++i) {
+                    double poly = pow(t, static_cast<double>(i)) * pow(1.0 - t, static_cast<double>(params->palette_count_ - 1 - i));
+                    hue += params->palette_[3 * i + 0] * poly;
+                    sat += params->palette_[3 * i + 1] * poly;
+                    val += params->palette_[3 * i + 2] * poly;
+                }
+                hue *= 360.0;
+            }
+            break;
+        case 6:
+        case 7:
             hue = 360.0 * log(mu) / log(escape_max);
             sat = 0.95;
             val = 1.0;
             break;
-        case 6:
-        case 7:
+        case 8:
+        case 9:
             if (mu < 2.71828182846) {
                 mu = 2.71828182846;
             }
