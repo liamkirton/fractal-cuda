@@ -39,6 +39,9 @@ png_writer::png_writer(YAML::Node &run_config) {
         prefix_ += "_";
     }
 
+    oversample_ = run_config["oversample"].as<bool>();
+    oversample_multiplier_ = run_config["oversample_multiplier"].as<uint32_t>();
+
     DWORD directory_attributes = GetFileAttributes(directory_.c_str());
     if ((directory_attributes == INVALID_FILE_ATTRIBUTES) || !(directory_attributes & FILE_ATTRIBUTE_DIRECTORY)) {
         CreateDirectory(directory_.c_str(), nullptr);
@@ -84,9 +87,13 @@ png_writer::~png_writer() {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void png_writer::write(std::tuple<uint64_t, uint64_t, const uint32_t *, std::string> &image) {
-    uint64_t image_width = std::get<0>(image);
-    uint64_t image_height = std::get<1>(image);
-    const uint32_t *image_buffer = std::get<2>(image);
+    uint64_t raw_image_width = std::get<0>(image);
+    uint64_t raw_image_height = std::get<1>(image);
+
+    uint64_t image_width = raw_image_width / (oversample_ ? oversample_multiplier_ : 1);
+    uint64_t image_height = raw_image_height / (oversample_ ? oversample_multiplier_ : 1);
+
+    const uint32_t *src_buffer = std::get<2>(image);
     std::string suffix = std::get<3>(image);
 
     png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
@@ -129,11 +136,39 @@ void png_writer::write(std::tuple<uint64_t, uint64_t, const uint32_t *, std::str
     }
     std::memset(row_buffer, 0, image_width * sizeof(uint32_t));
 
-    for (uint64_t y = 0; y < image_height; y++) {
-        for (uint64_t x = 0; x < image_width; x++) {
-            row_buffer[x] = image_buffer[x + y * image_width];
+    if (oversample_) {
+        uint32_t n = oversample_multiplier_ * oversample_multiplier_;
+
+        for (uint32_t y = 0; y < image_height; ++y) {
+            for (uint32_t x = 0; x < image_width; ++x) {
+                uint32_t p_r{ 0 };
+                uint32_t p_g{ 0 };
+                uint32_t p_b{ 0 };
+                uint32_t p_a{ 0 };
+
+                for (uint32_t y_k = 0; y_k < oversample_multiplier_; ++y_k) {
+                    for (uint32_t x_k = 0; x_k < oversample_multiplier_; ++x_k) {
+                        uint32_t p_src = src_buffer[(oversample_multiplier_ * y + y_k) * (oversample_multiplier_ * image_width) + (oversample_multiplier_ * x + x_k)];
+                        p_a += (p_src & 0xff000000) >> 24;
+                        p_r += (p_src & 0x00ff0000) >> 16;
+                        p_g += (p_src & 0x0000ff00) >> 8;
+                        p_b += (p_src & 0x000000ff);
+                    }
+                }
+
+                row_buffer[x] = ((p_a / n) << 24) | ((p_r / n) << 16) | ((p_g / n) << 8) | (p_b / n);
+            }
+
+            png_write_row(png_ptr, reinterpret_cast<png_const_bytep>(row_buffer));
         }
-        png_write_row(png_ptr, reinterpret_cast<png_const_bytep>(row_buffer));
+    }
+    else {
+        for (uint64_t y = 0; y < image_height; y++) {
+            for (uint64_t x = 0; x < image_width; x++) {
+                row_buffer[x] = src_buffer[x + y * image_width];
+            }
+            png_write_row(png_ptr, reinterpret_cast<png_const_bytep>(row_buffer));
+        }
     }
 
     delete[] row_buffer;

@@ -29,6 +29,16 @@
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef _DEBUG
+constexpr uint32_t T_I = 2;
+constexpr uint32_t T_F = 8;
+#else
+constexpr uint32_t T_I = 2;
+constexpr uint32_t T_F = 32;
+#endif
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 struct run_state {
     run_state() : count(1), skip(0), julia(false),
         image_width(1024), image_height(768),
@@ -40,15 +50,15 @@ struct run_state {
     uint32_t count;
     uint32_t skip;
 
-    fixed_point<2, 32> re;
-    fixed_point<2, 32> im;
-    fixed_point<2, 32> scale;
-    fixed_point<2, 32> scale_factor;
-    fixed_point<2, 32> step;
+    fixed_point<T_I, T_F> re;
+    fixed_point<T_I, T_F> im;
+    fixed_point<T_I, T_F> scale;
+    fixed_point<T_I, T_F> scale_factor;
+    fixed_point<T_I, T_F> step;
 
     bool julia;
-    fixed_point<2, 32> re_c;
-    fixed_point<2, 32> im_c;
+    fixed_point<T_I, T_F> re_c;
+    fixed_point<T_I, T_F> im_c;
 
     uint32_t image_width;
     uint32_t image_height;
@@ -57,6 +67,9 @@ struct run_state {
     uint32_t cuda_threads;
 
     bool interactive;
+    bool oversample;
+    uint32_t oversample_multiplier;
+
     bool trial;
     uint32_t colour_method;
 
@@ -232,6 +245,9 @@ void create_run_state(run_state &r, YAML::Node &run_config) {
     r.cuda_threads = r.run_config["cuda_threads"].as<uint32_t>();
 
     r.interactive = r.run_config["interactive"].as<bool>();
+    r.oversample = r.run_config["oversample"].as<bool>();
+    r.oversample_multiplier = r.run_config["oversample_multiplier"].as<uint32_t>();
+
     r.trial = r.run_config["trial"].as<bool>();
 }
 
@@ -272,9 +288,9 @@ bool run_interactive(run_state &r) {
                 queue.pop();
             }
 
-            fixed_point<2, 32> re_c(r.re);
-            fixed_point<2, 32> im_c(r.im);
-            fixed_point<2, 32> scale_c(r.scale);
+            fixed_point<T_I, T_F> re_c(r.re);
+            fixed_point<T_I, T_F> im_c(r.im);
+            fixed_point<T_I, T_F> scale_c(r.scale);
 
             for (uint32_t i = 0; i < r.skip; ++i) {
                 scale_c.multiply(r.scale_factor);
@@ -305,8 +321,34 @@ bool run_interactive(run_state &r) {
 
             run_generate(r, [&](bool complete, image &i, std::string &suffix, uint32_t ix) {
                 const uint32_t *src_buffer = i.image_buffer();
-                for (uint32_t i = 0; i < r.image_width * r.image_height; ++i) {
-                    image_buffer[i] = (src_buffer[i] & 0xff00ff00) | ((src_buffer[i] & 0xff) << 16) | ((src_buffer[i] & 0xff0000) >> 16);
+                if (r.oversample) {
+                    uint32_t n = r.oversample_multiplier * r.oversample_multiplier;
+
+                    for (uint32_t y = 0; y < r.image_height; ++y) {
+                        for (uint32_t x = 0; x < r.image_width; ++x) {
+                            uint32_t p_r{ 0 };
+                            uint32_t p_g{ 0 };
+                            uint32_t p_b{ 0 };
+                            uint32_t p_a{ 0 };
+
+                            for (uint32_t y_k = 0; y_k < r.oversample_multiplier; ++y_k) {
+                                for (uint32_t x_k = 0; x_k < r.oversample_multiplier; ++x_k) {
+                                    uint32_t p_src = src_buffer[(r.oversample_multiplier * y + y_k) * (r.oversample_multiplier * r.image_width) + (r.oversample_multiplier * x + x_k)];
+                                    p_a += (p_src & 0xff000000) >> 24;
+                                    p_b += (p_src & 0x00ff0000) >> 16;
+                                    p_g += (p_src & 0x0000ff00) >> 8;
+                                    p_r += (p_src & 0x000000ff);
+                                }
+                            }
+
+                            image_buffer[y * r.image_width + x] = ((p_a / n) << 24) | ((p_r / n) << 16) | ((p_g / n) << 8) | (p_b / n);
+                        }
+                    }
+                }
+                else {
+                    for (uint32_t i = 0; i < r.image_width * r.image_height; ++i) {
+                        image_buffer[i] = (src_buffer[i] & 0xff00ff00) | ((src_buffer[i] & 0xff) << 16) | ((src_buffer[i] & 0xff0000) >> 16);
+                    }
                 }
                 InvalidateRect(hWnd, NULL, TRUE);
                 return queue.empty() && (hWnd != nullptr);
@@ -423,6 +465,8 @@ bool run_interactive(run_state &r) {
     gen_thread.join();
     CloseHandle(hExitEvent);
 
+    delete[] image_buffer;
+
     return true;
 }
 
@@ -431,12 +475,13 @@ bool run_interactive(run_state &r) {
 bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
     std::vector<std::tuple<double, double, double>> palette = create_palette(r);
 
-    fixed_point<2, 32> scale(r.scale);
+    fixed_point<T_I, T_F> scale(r.scale);
 
     for (uint32_t i = 0; i < r.count; ++i) {
         if (i >= r.skip) {
-            fixed_point<2, 32> precision_test(r.step);
+            fixed_point<T_I, T_F> precision_test(r.step);
             precision_test.multiply(scale);
+
             uint32_t precision_bit = precision_test.get_fractional_significant_bit();
 
             std::cout << "[+] Generating Fractal #" << i << std::endl
@@ -454,6 +499,7 @@ bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &,
             else if (precision_bit < 32 * 4) {
                 run_step<1, 4>(r, i, palette, callback);
             }
+#ifndef _DEBUG
             else if (precision_bit < 32 * 6) {
                 run_step<1, 6>(r, i, palette, callback);
             }
@@ -478,6 +524,7 @@ bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &,
             else if (precision_bit < 32 * 32) {
                 run_step<1, 32>(r, i, palette, callback);
             }
+#endif
             else {
                 std::cout << " - UNSUPPORTED" << std::endl;
             }
@@ -495,6 +542,9 @@ bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &,
 
 template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
     fractal<double> f(r.image_width, r.image_height);
+    if (r.oversample) {
+        f.resize(r.image_width * r.oversample_multiplier, r.image_height * r.oversample_multiplier);
+    }
     if ((r.cuda_groups != 0) && (r.cuda_threads != 0)) {
         f.initialise(r.cuda_groups, r.cuda_threads);
     }
@@ -550,6 +600,9 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
 
 template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
     fractal<fixed_point<I, F>> f(r.image_width, r.image_height);
+    if (r.oversample) {
+        f.resize(r.image_width * r.oversample_multiplier, r.image_height * r.oversample_multiplier);
+    }
     if ((r.cuda_groups != 0) && (r.cuda_threads != 0)) {
         f.initialise(r.cuda_groups, r.cuda_threads);
     }

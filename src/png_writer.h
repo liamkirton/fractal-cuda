@@ -28,6 +28,9 @@ private:
     std::mutex mutex_;
     std::queue<std::tuple<uint64_t, uint64_t, const uint32_t *, std::string>> queue_;
     std::vector<std::thread> threads_;
+
+    bool oversample_;
+    uint32_t oversample_multiplier_;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

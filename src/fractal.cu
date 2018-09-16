@@ -24,6 +24,7 @@ template class fractal<double>;
 template class fractal<fixed_point<1, 2>>;
 template class fractal<fixed_point<1, 3>>;
 template class fractal<fixed_point<1, 4>>;
+#ifndef _DEBUG
 template class fractal<fixed_point<1, 6>>;
 template class fractal<fixed_point<1, 8>>;
 template class fractal<fixed_point<1, 12>>;
@@ -32,6 +33,7 @@ template class fractal<fixed_point<1, 20>>;
 template class fractal<fixed_point<1, 24>>;
 template class fractal<fixed_point<1, 28>>;
 template class fractal<fixed_point<1, 32>>;
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -105,6 +107,10 @@ void fractal<T>::resize(const uint32_t image_width, const uint32_t image_height)
     if ((image_width != image_width_) || (image_height != image_height_)) {
         image_width_ = image_width;
         image_height_ = image_height;
+        if (chunk_buffer_ != nullptr) {
+            delete[] chunk_buffer_;
+            chunk_buffer_ = nullptr;
+        }
         if (image_ != nullptr) {
             delete[] image_;
             image_ = nullptr;
@@ -265,8 +271,12 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
         chunk_status[i] = false;
     }
 
+    auto complete = [&]() {
+        return !std::any_of(chunk_status.begin(), chunk_status.end(), [](const std::pair<uint32_t, bool> &v) { return !v.second; });
+    };
+
     auto next = [&]() {
-        if (!std::any_of(chunk_status.begin(), chunk_status.end(), [](const std::pair<uint32_t, bool> &v) { return !v.second; })) {
+        if (complete()) {
             if ((interactive) && (chunk_p++ < chunk_count)) {
                 chunk_i = (chunk_i + 1) % chunk_count;
                 chunk_dirty = true;
@@ -306,26 +316,26 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
             << chunk_count << " (Done: " << chunk_count_complete << ")"
             << ", Block: " << escape_i * escape_block_ << " / " << escape_limit_ << std::flush;
 
-        params.escape_i_ = escape_i;
-        params.chunk_offset_ = chunk_offset;
+        if (!chunk_status[chunk_i] || complete()) {
+            params.escape_i_ = escape_i;
+            params.chunk_offset_ = chunk_offset;
 
-        if ((cudaError = cudaMemcpy(params_device, &params, sizeof(params), cudaMemcpyHostToDevice)) != cudaSuccess) {
-            std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyHostToDevice): " << cudaError << std::endl;
-            break;
-        }
-
-        if (chunk_dirty) {
-            if ((cudaError = cudaMemcpy(chunk_buffer_device_,
-                    &chunk_buffer_[chunk_offset],
-                    chunk_cuda_groups * cuda_threads_ * sizeof(kernel_chunk<T>),
-                    cudaMemcpyHostToDevice)) != cudaSuccess) {
+            if ((cudaError = cudaMemcpy(params_device, &params, sizeof(params), cudaMemcpyHostToDevice)) != cudaSuccess) {
                 std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyHostToDevice): " << cudaError << std::endl;
                 break;
             }
-            chunk_dirty = false;
-        }
 
-        if (!chunk_status[chunk_i]) {
+            if (chunk_dirty) {
+                if ((cudaError = cudaMemcpy(chunk_buffer_device_,
+                        &chunk_buffer_[chunk_offset],
+                        chunk_cuda_groups * cuda_threads_ * sizeof(kernel_chunk<T>),
+                        cudaMemcpyHostToDevice)) != cudaSuccess) {
+                    std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyHostToDevice): " << cudaError << std::endl;
+                    break;
+                }
+                chunk_dirty = false;
+            }
+
             if (escape_i == 0) {
                 if (julia_) {
                     kernel_init_julia<<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device);
@@ -370,32 +380,33 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
                 params.escape_range_max_ = chunk_buffer_[chunk_offset].escape_reduce_max_;
                 std::cout << " >";
             }
-        }
 
-        if ((cudaError = cudaMemset(image_device_, 0, cuda_groups_ * cuda_threads_ * sizeof(uint32_t))) != cudaSuccess) {
-            std::cout << std::endl << "[!] ERROR: cudaMemset(): " << cudaError << std::endl;
-            break;
-        }
+            if ((cudaError = cudaMemset(image_device_, 0, cuda_groups_ * cuda_threads_ * sizeof(uint32_t))) != cudaSuccess) {
+                std::cout << std::endl << "[!] ERROR: cudaMemset(): " << cudaError << std::endl;
+                break;
+            }
 
-        kernel_colour<T><<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device, image_device_);
-        if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
-            std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_colour ]: " << cudaError << std::endl;
-            break;
-        }
+            kernel_colour<T> << <static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_) >> >(chunk_buffer_device_, params_device, image_device_);
+            if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
+                std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_colour ]: " << cudaError << std::endl;
+                break;
+            }
 
-        if ((cudaError = cudaMemcpy(&image_[chunk_offset],
+            if ((cudaError = cudaMemcpy(&image_[chunk_offset],
                 image_device_,
                 chunk_cuda_groups * cuda_threads_ * sizeof(uint32_t),
                 cudaMemcpyDeviceToHost)) != cudaSuccess) {
-            std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
-            break;
+                std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
+                break;
+            }
+
+            if (!callback()) {
+                std::cout << std::endl << "    [+] Aborted.";
+                break;
+            }
         }
 
-        if (!callback()) {
-            std::cout << std::endl << "    [+] Aborted.";
-            break;
-        }
-        else if (!next()) {
+        if (!next()) {
             break;
         }
     }

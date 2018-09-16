@@ -65,3 +65,5 @@ reset: false
 trial: true
 
 interactive: false
+oversample: false
+oversample_multiplier: 2
