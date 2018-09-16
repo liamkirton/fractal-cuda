@@ -9,10 +9,10 @@ prev_cwd = os.getcwd()
 os.chdir(os.path.join(os.path.split(__file__)[0], '..'))
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-c', '--count', type=int, default=16)
+parser.add_argument('--count', type=int, default=32)
+parser.add_argument('--debug', action='store_true', default=False)
 parser.add_argument('-i', '--interactive', action='store_true', default=False)
-parser.add_argument('--4k', action='store_true', default=False)
-args = parser.parse_args()
+args, other_args = parser.parse_known_args()
 
 try:
     api = twitter.Api(**json.loads(open('scripts/keys.json', 'r').read()))
@@ -30,16 +30,16 @@ try:
         print('>>> Random Mandelbrot', 're:', re, 'im:', im, 'scale:', scale)
 
         fractal_cmd =[
-            'bin/x64/Release/fractal.exe',
+            'bin/x64/' + ('Debug' if args.debug else 'Release') + '/fractal.exe',
             '-re', re,
             '-im', im,
             '-scale', scale
         ]
 
-        if getattr(args, '4k'):
-            fractal_cmd.extend(['-image_width', '3840', '-image_height', '2160'])
         if args.interactive:
             fractal_cmd.extend(['-interactive', 'true'])
+        if len(other_args):
+            fractal_cmd.extend(other_args)
 
         fractal = subprocess.Popen(fractal_cmd)
         fractal.communicate()

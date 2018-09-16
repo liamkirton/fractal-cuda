@@ -37,7 +37,7 @@ struct kernel_params {
                 image_width_(image_width), image_height_(image_height),
                 escape_block_(escape_block), escape_limit_(escape_limit), colour_method_(colour_method),
                 escape_i_(0), escape_range_min_(0), escape_range_max_(escape_limit),
-                image_chunk_(0),
+                chunk_offset_(0),
                 re_(re), im_(im), scale_(scale), re_c_(re_c), im_c_(im_c),
                 set_hue_(0.0), set_sat_(0.0), set_val_(0.0), palette_(nullptr), palette_count_(0) {};
     uint32_t image_width_;
@@ -50,7 +50,7 @@ struct kernel_params {
     uint64_t escape_range_max_;
 
     uint8_t colour_method_;
-    uint32_t image_chunk_;
+    uint32_t chunk_offset_;
 
     T re_;
     T im_;
@@ -172,30 +172,16 @@ public:
         return image_;
     }
 
-    double re() {
-        return re(image_width_ / 2);
+    T re() {
+        return re_;
     }
 
-    double re(uint32_t x) {
-        if (x > image_width_) {
-            x = 0;
-        }
-        return static_cast<double>(re_) + (re_min + x * (re_max - re_min) / image_width_) * static_cast<double>(scale_);
+    T im() {
+        return im_;
     }
 
-    double im() {
-        return im(image_height_ / 2);
-    }
-
-    double im(uint32_t y) {
-        if (y > image_height_) {
-            y = 0;
-        }
-        return static_cast<double>(im_) + (im_max - y * (im_max - im_min) / image_height_) * static_cast<double>(scale_);
-    }
-
-    double scale() {
-        return static_cast<double>(scale_);
+    T scale() {
+        return scale_;
     }
 
 private:

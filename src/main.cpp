@@ -254,15 +254,15 @@ bool run_interactive(run_state &r) {
     HWND hWnd{ nullptr };
 
     std::mutex mutex;
-    std::queue<std::tuple<bool, uint64_t, uint64_t>> queue;
-    queue.push(std::make_tuple(false, r.image_width / 2, r.image_height / 2));
+    std::queue<std::tuple<int32_t, uint64_t, uint64_t>> queue;
+    queue.push(std::make_tuple(0, r.image_width / 2, r.image_height / 2));
 
     uint32_t *image_buffer = new uint32_t[r.image_width * r.image_height];
     memset(image_buffer, 0, sizeof(uint32_t) * r.image_width * r.image_height);
 
     auto gen_thread = std::thread([&]() {
         while (WaitForSingleObject(hExitEvent, 500) != WAIT_OBJECT_0) {
-            std::tuple<bool, uint64_t, uint64_t> coords{ false, 0, 0 };
+            std::tuple<int32_t, uint64_t, uint64_t> coords{ false, 0, 0 };
             {
                 std::lock_guard<std::mutex> lock(mutex);
                 if (queue.empty()) {
@@ -290,11 +290,12 @@ bool run_interactive(run_state &r) {
             int32_t count = r.count;
             int32_t skip = r.skip;
 
-            if (std::get<0>(coords)) {
+            int32_t direction = std::get<0>(coords);
+            if (direction > 0) {
                 count += 1;
                 skip += 1;
             }
-            else {
+            else if (direction < 0) {
                 count -= 1;
                 skip -= 1;
             }
@@ -308,7 +309,7 @@ bool run_interactive(run_state &r) {
                     image_buffer[i] = (src_buffer[i] & 0xff00ff00) | ((src_buffer[i] & 0xff) << 16) | ((src_buffer[i] & 0xff0000) >> 16);
                 }
                 InvalidateRect(hWnd, NULL, TRUE);
-                return queue.empty();
+                return queue.empty() && (hWnd != nullptr);
             });
         }
     });
@@ -352,9 +353,14 @@ bool run_interactive(run_state &r) {
             break;
         case WM_LBUTTONUP:
         case WM_RBUTTONUP: 
+        case WM_MBUTTONUP:
         {
+            int32_t zoom = 0;
+            if (uMsg == WM_LBUTTONUP) zoom = 1;
+            else if (uMsg == WM_RBUTTONUP) zoom = -1;
+
             std::lock_guard<std::mutex> lock(mutex);
-            queue.push(std::make_tuple(uMsg == WM_LBUTTONUP, LOWORD(lParam), HIWORD(lParam)));
+            queue.push(std::make_tuple(zoom, LOWORD(lParam), HIWORD(lParam)));
             break;
         }
         default:
@@ -410,6 +416,8 @@ bool run_interactive(run_state &r) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
+
+    hWnd = nullptr;
 
     SetEvent(hExitEvent);
     gen_thread.join();
