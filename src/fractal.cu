@@ -165,7 +165,7 @@ void fractal<T>::specify_julia(const T &re_c, const T &im_c) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-bool fractal<T>::generate(bool trial, bool interactive, std::function<bool(void)> callback) {
+bool fractal<T>::generate(bool trial, bool interactive, std::function<bool(bool)> callback) {
     resize(image_width_, image_height_);
 
     kernel_params<T> params_trial(trial_image_width_, trial_image_height_, escape_block_, escape_limit_, colour_method_, re_, im_, scale_, re_c_, im_c_);
@@ -185,7 +185,7 @@ bool fractal<T>::generate(bool trial, bool interactive, std::function<bool(void)
         params_trial.escape_range_min_ = 0xffffffffffffffff;
         params_trial.escape_range_max_ = 0;
 
-        if (!generate(params_trial, interactive, [&]() {
+        if (!generate(params_trial, interactive, [&](bool render) {
             if (interactive) {
                 uint32_t *trial_image = new uint32_t[trial_image_width_ * trial_image_height_];
                 memcpy(trial_image, image_, sizeof(uint32_t) * trial_image_width_ * trial_image_height_);
@@ -195,7 +195,7 @@ bool fractal<T>::generate(bool trial, bool interactive, std::function<bool(void)
                     }
                 }
                 delete[] trial_image;
-                return callback();
+                return callback(render);
             }
             return true;
         })) {
@@ -221,7 +221,7 @@ bool fractal<T>::generate(bool trial, bool interactive, std::function<bool(void)
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::function<bool(void)> callback) {
+bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::function<bool(bool)> callback) {
     if (palette_.size() > 0) {
         cudaMalloc(&params.palette_, 3 * sizeof(double) * palette_.size());
 
@@ -277,7 +277,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
 
     auto next = [&]() {
         if (complete()) {
-            if ((interactive) && (chunk_p++ < chunk_count)) {
+            if (chunk_p++ < chunk_count) {
                 chunk_i = (chunk_i + 1) % chunk_count;
                 chunk_dirty = true;
                 return true;
@@ -336,49 +336,62 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
                 chunk_dirty = false;
             }
 
-            if (escape_i == 0) {
-                if (julia_) {
-                    kernel_init_julia<<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device);
+            if (!chunk_status[chunk_i]) {
+                if (escape_i == 0) {
+                    if (julia_) {
+                        kernel_init_julia<<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device);
+                    }
+                    else {
+                        kernel_init_mandelbrot << <static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device);
+                    }
                 }
-                else {
-                    kernel_init_mandelbrot<<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device);
+
+                kernel_iterate<<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device);
+
+                if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
+                    std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_iterate ]: " << cudaError << std::endl;
+                    break;
                 }
-            }
 
-            kernel_iterate<<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device);
+                kernel_reduce<<<1, static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device, static_cast<uint32_t>(chunk_cuda_groups));
 
-            if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
-                std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_iterate ]: " << cudaError << std::endl;
-                break;
-            }
+                if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
+                    std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_reduce ]: " << cudaError << std::endl;
+                    break;
+                }
 
-            kernel_reduce<<<1, static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device, static_cast<uint32_t>(chunk_cuda_groups));
+                if ((cudaError = cudaMemcpy(&chunk_buffer_[chunk_offset],
+                        chunk_buffer_device_,
+                        chunk_cuda_groups * cuda_threads_ * sizeof(kernel_chunk<T>),
+                        cudaMemcpyDeviceToHost)) != cudaSuccess) {
+                    std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
+                    break;
+                }
 
-            if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
-                std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_reduce ]: " << cudaError << std::endl;
-                break;
-            }
+                bool params_update = false;
 
-            if ((cudaError = cudaMemcpy(&chunk_buffer_[chunk_offset],
-                    chunk_buffer_device_,
-                    chunk_cuda_groups * cuda_threads_ * sizeof(kernel_chunk<T>),
-                    cudaMemcpyDeviceToHost)) != cudaSuccess) {
-                std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
-                break;
-            }
+                if (chunk_buffer_[chunk_offset].escape_reduce_ == chunk_cuda_groups * cuda_threads_) {
+                    chunk_status[chunk_i] = true;
+                    chunk_count_complete++;
+                    std::cout << " +C";
+                }
+                if (chunk_buffer_[chunk_offset].escape_reduce_min_ < params.escape_range_min_) {
+                    params.escape_range_min_ = chunk_buffer_[chunk_offset].escape_reduce_min_;
+                    std::cout << " <";
+                    params_update = true;
+                }
+                if (chunk_buffer_[chunk_offset].escape_reduce_max_ > params.escape_range_max_) {
+                    params.escape_range_max_ = chunk_buffer_[chunk_offset].escape_reduce_max_;
+                    std::cout << " >";
+                    params_update = true;
+                }
 
-            if (chunk_buffer_[chunk_offset].escape_reduce_ == chunk_cuda_groups * cuda_threads_) {
-                chunk_status[chunk_i] = true;
-                chunk_count_complete++;
-                std::cout << " +C";
-            }
-            if (chunk_buffer_[chunk_offset].escape_reduce_min_ < params.escape_range_min_) {
-                params.escape_range_min_ = chunk_buffer_[chunk_offset].escape_reduce_min_;
-                std::cout << " <";
-            }
-            if (chunk_buffer_[chunk_offset].escape_reduce_max_ > params.escape_range_max_) {
-                params.escape_range_max_ = chunk_buffer_[chunk_offset].escape_reduce_max_;
-                std::cout << " >";
+                if (params_update) {
+                    if ((cudaError = cudaMemcpy(params_device, &params, sizeof(params), cudaMemcpyHostToDevice)) != cudaSuccess) {
+                        std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyHostToDevice): " << cudaError << std::endl;
+                        break;
+                    }
+                }
             }
 
             if ((cudaError = cudaMemset(image_device_, 0, cuda_groups_ * cuda_threads_ * sizeof(uint32_t))) != cudaSuccess) {
@@ -386,7 +399,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
                 break;
             }
 
-            kernel_colour<T> << <static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_) >> >(chunk_buffer_device_, params_device, image_device_);
+            kernel_colour<T><<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device, image_device_);
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                 std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_colour ]: " << cudaError << std::endl;
                 break;
@@ -400,7 +413,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
                 break;
             }
 
-            if (!callback()) {
+            if (!callback(params.escape_range_min_ < ((escape_i + 1) * params.escape_block_))) {
                 std::cout << std::endl << "    [+] Aborted.";
                 break;
             }
@@ -415,7 +428,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
     cudaFree(params_device);
 
     std::cout << std::endl;
-    return true;
+    return cudaError == cudaSuccess;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

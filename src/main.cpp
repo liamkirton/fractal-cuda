@@ -85,9 +85,9 @@ void create_run_state(run_state &r, YAML::Node &run_config);
 bool run(run_state &r);
 bool run_interactive(run_state &r);
 
-bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &, uint32_t)> callback);
-template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback);
-template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback);
+bool run_generate(run_state &r, std::function<bool(bool, bool, image &, std::string &, uint32_t)> callback);
+template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, bool, image &, std::string &, uint32_t)> callback);
+template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, bool, image &, std::string &, uint32_t)> callback);
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -255,7 +255,7 @@ void create_run_state(run_state &r, YAML::Node &run_config) {
 
 bool run(run_state &r) {
     std::unique_ptr<png_writer> png(new png_writer(r.run_config));
-    return run_generate(r, [&png](bool complete, image &i, std::string &suffix, uint32_t ix) {
+    return run_generate(r, [&png](bool complete, bool render, image &i, std::string &suffix, uint32_t ix) {
         if (complete) {
             png->write(i, suffix, ix);
         }
@@ -269,23 +269,26 @@ bool run_interactive(run_state &r) {
     HANDLE hExitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     HWND hWnd{ nullptr };
 
-    std::mutex mutex;
-    std::queue<std::tuple<int32_t, uint64_t, uint64_t>> queue;
-    queue.push(std::make_tuple(0, r.image_width / 2, r.image_height / 2));
+    std::mutex mutex_generate;
+    std::mutex mutex_render;
+    std::queue<std::tuple<int32_t, uint64_t, uint64_t>> queue_generate;
+    std::queue<std::tuple<uint32_t, uint32_t, uint32_t *>> queue_render;
+
+    queue_generate.push(std::make_tuple(0, r.image_width / 2, r.image_height / 2));
 
     uint32_t *image_buffer = new uint32_t[r.image_width * r.image_height];
     memset(image_buffer, 0, sizeof(uint32_t) * r.image_width * r.image_height);
 
-    auto gen_thread = std::thread([&]() {
+    auto thread_generate = std::thread([&]() {
         while (WaitForSingleObject(hExitEvent, 500) != WAIT_OBJECT_0) {
             std::tuple<int32_t, uint64_t, uint64_t> coords{ false, 0, 0 };
             {
-                std::lock_guard<std::mutex> lock(mutex);
-                if (queue.empty()) {
+                std::lock_guard<std::mutex> lock(mutex_generate);
+                if (queue_generate.empty()) {
                     continue;
                 }
-                coords = queue.front();
-                queue.pop();
+                coords = queue_generate.front();
+                queue_generate.pop();
             }
 
             fixed_point<T_I, T_F> re_c(r.re);
@@ -319,40 +322,72 @@ bool run_interactive(run_state &r) {
             r.count = count >= 1 ? count : 1;
             r.skip = skip >= 0 ? skip : 0;
 
-            run_generate(r, [&](bool complete, image &i, std::string &suffix, uint32_t ix) {
-                const uint32_t *src_buffer = i.image_buffer();
-                if (r.oversample) {
-                    uint32_t n = r.oversample_multiplier * r.oversample_multiplier;
-
-                    for (uint32_t y = 0; y < r.image_height; ++y) {
-                        for (uint32_t x = 0; x < r.image_width; ++x) {
-                            uint32_t p_r{ 0 };
-                            uint32_t p_g{ 0 };
-                            uint32_t p_b{ 0 };
-                            uint32_t p_a{ 0 };
-
-                            for (uint32_t y_k = 0; y_k < r.oversample_multiplier; ++y_k) {
-                                for (uint32_t x_k = 0; x_k < r.oversample_multiplier; ++x_k) {
-                                    uint32_t p_src = src_buffer[(r.oversample_multiplier * y + y_k) * (r.oversample_multiplier * r.image_width) + (r.oversample_multiplier * x + x_k)];
-                                    p_a += (p_src & 0xff000000) >> 24;
-                                    p_b += (p_src & 0x00ff0000) >> 16;
-                                    p_g += (p_src & 0x0000ff00) >> 8;
-                                    p_r += (p_src & 0x000000ff);
-                                }
-                            }
-
-                            image_buffer[y * r.image_width + x] = ((p_a / n) << 24) | ((p_r / n) << 16) | ((p_g / n) << 8) | (p_b / n);
-                        }
+            run_generate(r, [&](bool complete, bool render, image &i, std::string &suffix, uint32_t ix) {
+                if (render) {
+                    const uint32_t *src_buffer = i.image_buffer();
+                    uint32_t *render_buffer = new uint32_t[i.image_width() * i.image_height()];
+                    memcpy(render_buffer, i.image_buffer(), i.image_width() * i.image_height() * sizeof(uint32_t));
+                    {
+                        std::lock_guard<std::mutex> lock(mutex_render);
+                        queue_render.push(std::make_tuple(i.image_width(), i.image_height(), render_buffer));
                     }
                 }
-                else {
-                    for (uint32_t i = 0; i < r.image_width * r.image_height; ++i) {
-                        image_buffer[i] = (src_buffer[i] & 0xff00ff00) | ((src_buffer[i] & 0xff) << 16) | ((src_buffer[i] & 0xff0000) >> 16);
-                    }
-                }
-                InvalidateRect(hWnd, NULL, TRUE);
-                return queue.empty() && (hWnd != nullptr);
+                return queue_generate.empty() && (hWnd != nullptr);
             });
+        }
+    });
+
+    auto thread_render = std::thread([&]() {
+        while (WaitForSingleObject(hExitEvent, 500) != WAIT_OBJECT_0) {
+            std::tuple<uint32_t, uint32_t, uint32_t *> image{ 0, 0, nullptr };
+            {
+                std::lock_guard<std::mutex> lock(mutex_render);
+                if (queue_render.empty()) {
+                    continue;
+                }
+                while (queue_render.size() > 1) {
+                    delete[] std::get<2>(queue_render.front());
+                    queue_render.pop();
+                }
+                image = queue_render.front();
+                queue_render.pop();
+            }
+
+            uint32_t *src_buffer = std::get<2>(image);
+
+            if (r.oversample) {
+                uint32_t n = r.oversample_multiplier * r.oversample_multiplier;
+
+                for (uint32_t y = 0; y < r.image_height; ++y) {
+                    for (uint32_t x = 0; x < r.image_width; ++x) {
+                        uint32_t p_r{ 0 };
+                        uint32_t p_g{ 0 };
+                        uint32_t p_b{ 0 };
+                        uint32_t p_a{ 0 };
+
+                        for (uint32_t y_k = 0; y_k < r.oversample_multiplier; ++y_k) {
+                            for (uint32_t x_k = 0; x_k < r.oversample_multiplier; ++x_k) {
+                                uint32_t p_src = src_buffer[(r.oversample_multiplier * y + y_k) * (r.oversample_multiplier * r.image_width) + (r.oversample_multiplier * x + x_k)];
+                                p_a += (p_src & 0xff000000) >> 24;
+                                p_b += (p_src & 0x00ff0000) >> 16;
+                                p_g += (p_src & 0x0000ff00) >> 8;
+                                p_r += (p_src & 0x000000ff);
+                            }
+                        }
+
+                        image_buffer[y * r.image_width + x] = ((p_a / n) << 24) | ((p_r / n) << 16) | ((p_g / n) << 8) | (p_b / n);
+                    }
+                }
+            }
+            else {
+                for (uint32_t i = 0; i < r.image_width * r.image_height; ++i) {
+                    image_buffer[i] = (src_buffer[i] & 0xff00ff00) | ((src_buffer[i] & 0xff) << 16) | ((src_buffer[i] & 0xff0000) >> 16);
+                }
+            }
+
+            delete[] src_buffer;
+
+            InvalidateRect(hWnd, NULL, TRUE);
         }
     });
 
@@ -401,8 +436,8 @@ bool run_interactive(run_state &r) {
             if (uMsg == WM_LBUTTONUP) zoom = 1;
             else if (uMsg == WM_RBUTTONUP) zoom = -1;
 
-            std::lock_guard<std::mutex> lock(mutex);
-            queue.push(std::make_tuple(zoom, LOWORD(lParam), HIWORD(lParam)));
+            std::lock_guard<std::mutex> lock(mutex_generate);
+            queue_generate.push(std::make_tuple(zoom, LOWORD(lParam), HIWORD(lParam)));
             break;
         }
         default:
@@ -462,8 +497,14 @@ bool run_interactive(run_state &r) {
     hWnd = nullptr;
 
     SetEvent(hExitEvent);
-    gen_thread.join();
+    thread_generate.join();
+    thread_render.join();
     CloseHandle(hExitEvent);
+
+    while (!queue_render.empty()) {
+        delete[] std::get<2>(queue_render.front());
+        queue_render.pop();
+    }
 
     delete[] image_buffer;
 
@@ -472,7 +513,7 @@ bool run_interactive(run_state &r) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
+bool run_generate(run_state &r, std::function<bool(bool, bool, image &, std::string &, uint32_t)> callback) {
     std::vector<std::tuple<double, double, double>> palette = create_palette(r);
 
     fixed_point<T_I, T_F> scale(r.scale);
@@ -540,7 +581,7 @@ bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &,
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
+template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, bool, image &, std::string &, uint32_t)> callback) {
     fractal<double> f(r.image_width, r.image_height);
     if (r.oversample) {
         f.resize(r.image_width * r.oversample_multiplier, r.image_height * r.oversample_multiplier);
@@ -581,16 +622,16 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
         << "im=" << std::setprecision(12) << f.im() << "_"
         << "scale=" << std::setprecision(12) << f.scale();
 
-    auto do_callback = [&](bool complete) {
+    auto do_callback = [&](bool complete, bool render) {
         image i(f.image_width(), f.image_height(), f.image());
-        return callback(complete, i, suffix.str(), ix);
+        return callback(complete, render, i, suffix.str(), ix);
     };
 
     timer gen_timer;
-    if (f.generate(r.trial, r.interactive, [&]() { return do_callback(false); })) {
+    if (f.generate(r.trial, r.interactive, [&](bool render) { return do_callback(false, render); })) {
         gen_timer.stop();
         gen_timer.print();
-        do_callback(true);
+        do_callback(true, true);
     }
 
     return true;
@@ -598,7 +639,7 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
+template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, bool, image &, std::string &, uint32_t)> callback) {
     fractal<fixed_point<I, F>> f(r.image_width, r.image_height);
     if (r.oversample) {
         f.resize(r.image_width * r.oversample_multiplier, r.image_height * r.oversample_multiplier);
@@ -639,16 +680,16 @@ template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::v
         << "im=" << std::setprecision(12) << f.im() << "_"
         << "scale=" << std::setprecision(12) << f.scale();
 
-    auto do_callback = [&](bool complete) {
+    auto do_callback = [&](bool complete, bool render) {
         image i(f.image_width(), f.image_height(), f.image());
-        return callback(complete, i, suffix.str(), ix);
+        return callback(complete, render, i, suffix.str(), ix);
     };
 
     timer gen_timer;
-    if (f.generate(r.trial, r.interactive, [&]() { return do_callback(false); })) {
+    if (f.generate(r.trial, r.interactive, [&](bool render) { return do_callback(false, render); })) {
         gen_timer.stop();
         gen_timer.print();
-        do_callback(true);
+        do_callback(true, true);
     }
 
     return true;
