@@ -51,13 +51,7 @@ png_writer::png_writer(YAML::Node &run_config) {
 
     for (uint32_t i = 0; i < 4; ++i) {
         threads_.push_back(std::thread([this]() {
-            while (true) {
-                if (WaitForSingleObject(exit_event_, 1000) == WAIT_OBJECT_0) {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    if (queue_.empty()) {
-                        break;
-                    }
-                }
+            while (WaitForSingleObject(exit_event_, 500) != WAIT_OBJECT_0) {
                 std::tuple<uint64_t, uint64_t, const uint32_t *, std::string> image{ 0, 0, nullptr, "" };
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
@@ -99,10 +93,10 @@ void png_writer::write(std::tuple<uint64_t, uint64_t, const uint32_t *, std::str
     png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
     png_infop info_ptr = png_create_info_struct(png_ptr);
 
-    if (setjmp(png_jmpbuf(png_ptr))) {
-        std::cout << L"[!] ERROR: png::write(): libpng Exception" << std::endl;
-        return;
-    }
+    //if (setjmp(png_jmpbuf(png_ptr))) {
+    //    std::cout << "[!] ERROR: png::write(): libpng Exception" << std::endl;
+    //    return;
+    //}
 
     tm tm_now{ 0 }; 
     __time64_t time_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -113,7 +107,7 @@ void png_writer::write(std::tuple<uint64_t, uint64_t, const uint32_t *, std::str
 
     FILE *file{ nullptr };
     if (fopen_s(&file, fn.str().c_str(), "wb") != 0) {
-        std::cout << L"[!] ERROR: png::write(): fopen_s Failed" << std::endl;
+        std::cout << "[!] ERROR: png::write(): fopen_s Failed" << std::endl;
         return;
     }
 

@@ -11,9 +11,6 @@
 template<typename T>
 struct kernel_chunk {
     uint64_t escape_;
-    uint64_t escape_reduce_;
-    uint64_t escape_reduce_min_;
-    uint64_t escape_reduce_max_;
     T re_c_;
     T im_c_;
     T re_;
@@ -68,6 +65,14 @@ struct kernel_params {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+struct kernel_reduce_params {
+    uint64_t escape_reduce_;
+    uint64_t escape_reduce_min_;
+    uint64_t escape_reduce_max_;
+};
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 constexpr double im_min = 1.5;
 constexpr double im_max = -1.5;
 constexpr double re_min = -3.0;
@@ -112,7 +117,7 @@ public:
     }
 
     fractal(const uint32_t image_width, const uint32_t image_height, uint64_t escape_block, uint64_t escape_limit, uint32_t cuda_groups, uint32_t cuda_threads) :
-            image_(nullptr), chunk_buffer_(nullptr),
+            chunk_buffer_(nullptr), chunk_buffer_device_(nullptr), image_(nullptr), image_device_(nullptr),
             image_width_(image_width), image_height_(image_height),
             trial_image_width_(cuda_threads), trial_image_height_(cuda_groups),
             cuda_groups_(cuda_groups), cuda_threads_(cuda_threads),
@@ -125,9 +130,6 @@ public:
 
     ~fractal() {
         uninitialise();
-        if (image_ != nullptr) {
-            delete[] image_;
-        }
     }
 
     bool initialise() {

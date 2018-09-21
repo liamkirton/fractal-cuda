@@ -11,7 +11,7 @@ os.chdir(os.path.join(os.path.split(__file__)[0], '..'))
 parser = argparse.ArgumentParser()
 parser.add_argument('--count', type=int, default=32)
 parser.add_argument('--debug', action='store_true', default=False)
-parser.add_argument('-i', '--interactive', action='store_true', default=False)
+parser.add_argument('--interactive', action='store_true', default=False)
 args, other_args = parser.parse_known_args()
 
 try:

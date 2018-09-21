@@ -7,6 +7,7 @@
 class image {
 public:
     image() : image_width_(0), image_height_(0), image_(nullptr) {}
+
     image(uint32_t image_width, uint32_t image_height, uint32_t *image) : image_width_(image_width),
             image_height_(image_height) {
         image_ = new uint32_t[image_width_ * image_height_];
@@ -38,7 +39,6 @@ public:
         }
         return buffer;
     }
-
 
 private:
     uint32_t image_width_;

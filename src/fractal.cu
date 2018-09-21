@@ -83,6 +83,7 @@ bool fractal<T>::initialise(uint32_t cuda_groups, uint32_t cuda_threads) {
     }
 
     resize(image_width_, image_height_);
+
     return true;
 }
 
@@ -90,11 +91,20 @@ bool fractal<T>::initialise(uint32_t cuda_groups, uint32_t cuda_threads) {
 
 template<typename T>
 void fractal<T>::uninitialise() {
+    if (chunk_buffer_ != nullptr) {
+        delete[] chunk_buffer_;
+        chunk_buffer_ = nullptr;
+    }
     if (chunk_buffer_device_ != nullptr) {
         cudaFree(chunk_buffer_device_);
         chunk_buffer_device_ = nullptr;
     }
+    if (image_ != nullptr) {
+        delete[] image_;
+        image_ = nullptr;
+    }
     if (image_device_ != nullptr) {
+        cudaFree(image_device_);
         image_device_ = nullptr;
     }
     cudaDeviceReset();
@@ -250,6 +260,12 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
         return false;
     }
 
+    kernel_reduce_params *reduce_device{ nullptr };
+    cudaMalloc(&reduce_device, cuda_threads_ * sizeof(kernel_reduce_params));
+    if (reduce_device == nullptr) {
+        return false;
+    }
+
     bool chunk_dirty = true;
     std::map<uint32_t, bool> chunk_status;
 
@@ -328,7 +344,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
             if (chunk_dirty) {
                 if ((cudaError = cudaMemcpy(chunk_buffer_device_,
                         &chunk_buffer_[chunk_offset],
-                        chunk_cuda_groups * cuda_threads_ * sizeof(kernel_chunk<T>),
+                        chunk_size * sizeof(kernel_chunk<T>),
                         cudaMemcpyHostToDevice)) != cudaSuccess) {
                     std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyHostToDevice): " << cudaError << std::endl;
                     break;
@@ -336,7 +352,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
                 chunk_dirty = false;
             }
 
-            if (!chunk_status[chunk_i]) {
+            if (!chunk_status[chunk_i] && ((params.escape_i_ * params.escape_block_) < params.escape_limit_)) {
                 if (escape_i == 0) {
                     if (julia_) {
                         kernel_init_julia<<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device);
@@ -353,7 +369,12 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
                     break;
                 }
 
-                kernel_reduce<<<1, static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device, static_cast<uint32_t>(chunk_cuda_groups));
+                if ((cudaError = cudaMemset(reduce_device, 0, sizeof(kernel_reduce_params) * cuda_threads_)) != cudaSuccess) {
+                    std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_iterate ]: " << cudaError << std::endl;
+                    break;
+                }
+
+                kernel_reduce<<<1, static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device, reduce_device, static_cast<uint32_t>(chunk_cuda_groups));
 
                 if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                     std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_reduce ]: " << cudaError << std::endl;
@@ -362,7 +383,16 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
 
                 if ((cudaError = cudaMemcpy(&chunk_buffer_[chunk_offset],
                         chunk_buffer_device_,
-                        chunk_cuda_groups * cuda_threads_ * sizeof(kernel_chunk<T>),
+                        chunk_size * sizeof(kernel_chunk<T>),
+                        cudaMemcpyDeviceToHost)) != cudaSuccess) {
+                    std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
+                    break;
+                }
+
+                kernel_reduce_params reduce{ 0 };
+                if ((cudaError = cudaMemcpy(&reduce,
+                        reduce_device,
+                        sizeof(kernel_reduce_params),
                         cudaMemcpyDeviceToHost)) != cudaSuccess) {
                     std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
                     break;
@@ -370,19 +400,19 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
 
                 bool params_update = false;
 
-                if (chunk_buffer_[chunk_offset].escape_reduce_ == chunk_cuda_groups * cuda_threads_) {
+                if (reduce.escape_reduce_ == (chunk_cuda_groups * cuda_threads_)) {
                     chunk_status[chunk_i] = true;
                     chunk_count_complete++;
                     std::cout << " +C";
                 }
-                if (chunk_buffer_[chunk_offset].escape_reduce_min_ < params.escape_range_min_) {
-                    params.escape_range_min_ = chunk_buffer_[chunk_offset].escape_reduce_min_;
-                    std::cout << " <";
+                if (reduce.escape_reduce_min_ < params.escape_range_min_) {
+                    params.escape_range_min_ = reduce.escape_reduce_min_;
+                    std::cout << " < " << params.escape_range_min_ << std::endl;
                     params_update = true;
                 }
-                if (chunk_buffer_[chunk_offset].escape_reduce_max_ > params.escape_range_max_) {
-                    params.escape_range_max_ = chunk_buffer_[chunk_offset].escape_reduce_max_;
-                    std::cout << " >";
+                if (reduce.escape_reduce_max_ > params.escape_range_max_) {
+                    params.escape_range_max_ = reduce.escape_reduce_max_;
+                    std::cout << " > " << params.escape_range_max_ << std::endl;;
                     params_update = true;
                 }
 
@@ -407,7 +437,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
 
             if ((cudaError = cudaMemcpy(&image_[chunk_offset],
                     image_device_,
-                    chunk_cuda_groups * cuda_threads_ * sizeof(uint32_t),
+                    chunk_size * sizeof(uint32_t),
                     cudaMemcpyDeviceToHost)) != cudaSuccess) {
                 std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
                 break;
@@ -426,6 +456,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
 
     cudaFree(params.palette_);
     cudaFree(params_device);
+    cudaFree(reduce_device);
 
     std::cout << std::endl;
     return cudaError == cudaSuccess;
@@ -769,8 +800,8 @@ __global__ void kernel_colour(kernel_chunk<T> *chunks, kernel_params<T> *params,
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-__global__ void kernel_reduce(kernel_chunk<T> *chunks, kernel_params<T> *params, uint32_t chunk_count) {
-    kernel_chunk<T> *chunk = &chunks[threadIdx.x];
+__global__ void kernel_reduce(kernel_chunk<T> *chunks, kernel_params<T> *params, kernel_reduce_params *reduce_params, uint32_t chunk_count) {
+    kernel_reduce_params *reduce = &reduce_params[threadIdx.x];
 
     uint64_t escape_reduce = 0;
     uint64_t escape_reduce_min = 0xffffffffffffffff;
@@ -789,24 +820,24 @@ __global__ void kernel_reduce(kernel_chunk<T> *chunks, kernel_params<T> *params,
         }
     }
 
-    chunk->escape_reduce_ = escape_reduce;
-    chunk->escape_reduce_min_ = escape_reduce_min;
-    chunk->escape_reduce_max_ = escape_reduce_max;
+    reduce->escape_reduce_ = escape_reduce;
+    reduce->escape_reduce_min_ = escape_reduce_min;
+    reduce->escape_reduce_max_ = escape_reduce_max;
 
     __syncthreads();
 
     if (threadIdx.x == 0) {
         escape_reduce = 0;
         for (uint32_t i = 0; i < blockDim.x; ++i) {
-            escape_reduce += chunks[i].escape_reduce_;
-            if (chunks[i].escape_reduce_min_ < chunk->escape_reduce_min_) {
-                chunk->escape_reduce_min_ = chunks[i].escape_reduce_min_;
+            escape_reduce += reduce_params[i].escape_reduce_;
+            if (reduce_params[i].escape_reduce_min_ < reduce->escape_reduce_min_) {
+                reduce->escape_reduce_min_ = reduce_params[i].escape_reduce_min_;
             }
-            if (chunks[i].escape_reduce_max_ > chunk->escape_reduce_max_) {
-                chunk->escape_reduce_max_ = chunks[i].escape_reduce_max_;
+            if (reduce_params[i].escape_reduce_max_ > reduce->escape_reduce_max_) {
+                reduce->escape_reduce_max_ = reduce_params[i].escape_reduce_max_;
             }
         }
-        chunk->escape_reduce_ = escape_reduce;
+        reduce->escape_reduce_ = escape_reduce;
     }
 
     __syncthreads();
