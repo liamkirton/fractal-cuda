@@ -288,7 +288,9 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
     }
 
     auto complete = [&]() {
-        return !std::any_of(chunk_status.begin(), chunk_status.end(), [](const std::pair<uint32_t, bool> &v) { return !v.second; });
+        return !std::any_of(chunk_status.begin(), chunk_status.end(), [](const std::pair<uint32_t, bool> &v) {
+            return !v.second;
+        }) || (escape_i >= escape_count);
     };
 
     auto next = [&]() {
@@ -309,7 +311,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
             chunk_dirty = true;
         }
         else {
-            escape_i = (escape_i + 1) % escape_count;
+            escape_i = chunk_status[chunk_i] ? 0 : (escape_i + 1) % escape_count;
             if (escape_i == 0) {
                 if (++chunk_i >= chunk_count) {
                     return false;
@@ -407,12 +409,12 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
                 }
                 if (reduce.escape_reduce_min_ < params.escape_range_min_) {
                     params.escape_range_min_ = reduce.escape_reduce_min_;
-                    std::cout << " < " << params.escape_range_min_ << std::endl;
+                    std::cout << " < " << params.escape_range_min_;
                     params_update = true;
                 }
                 if (reduce.escape_reduce_max_ > params.escape_range_max_) {
                     params.escape_range_max_ = reduce.escape_reduce_max_;
-                    std::cout << " > " << params.escape_range_max_ << std::endl;;
+                    std::cout << " > " << params.escape_range_max_;
                     params_update = true;
                 }
 

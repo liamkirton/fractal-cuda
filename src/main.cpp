@@ -271,17 +271,19 @@ bool run_interactive(run_state &r) {
 
     std::mutex mutex_generate;
     std::mutex mutex_render;
-    std::queue<std::tuple<int32_t, uint64_t, uint64_t>> queue_generate;
+    std::queue<std::tuple<int32_t, bool, uint64_t, uint64_t>> queue_generate;
     std::queue<std::tuple<uint32_t, uint32_t, uint32_t *>> queue_render;
 
-    queue_generate.push(std::make_tuple(0, r.image_width / 2, r.image_height / 2));
+    queue_generate.push(std::make_tuple(0, false, r.image_width / 2, r.image_height / 2));
 
     uint32_t *image_buffer = new uint32_t[r.image_width * r.image_height];
     memset(image_buffer, 0, sizeof(uint32_t) * r.image_width * r.image_height);
 
+    std::unique_ptr<png_writer> png(new png_writer(r.run_config));
+
     auto thread_generate = std::thread([&]() {
         while (WaitForSingleObject(hExitEvent, 500) != WAIT_OBJECT_0) {
-            std::tuple<int32_t, uint64_t, uint64_t> coords{ false, 0, 0 };
+            std::tuple<int32_t, bool, uint64_t, uint64_t> coords{ 0, false, 0, 0 };
             {
                 std::lock_guard<std::mutex> lock(mutex_generate);
                 if (queue_generate.empty()) {
@@ -299,8 +301,8 @@ bool run_interactive(run_state &r) {
                 scale_c.multiply(r.scale_factor);
             }
 
-            r.re.set(re_min + std::get<1>(coords) * (re_max - re_min) / r.image_width);
-            r.im.set(im_max - std::get<2>(coords) * (im_max - im_min) / r.image_height);
+            r.re.set(re_min + std::get<2>(coords) * (re_max - re_min) / r.image_width);
+            r.im.set(im_max - std::get<3>(coords) * (im_max - im_min) / r.image_height);
             r.re.multiply(scale_c);
             r.im.multiply(scale_c);
             r.re.add(re_c);
@@ -310,6 +312,8 @@ bool run_interactive(run_state &r) {
             int32_t skip = r.skip;
 
             int32_t direction = std::get<0>(coords);
+            bool save_png = std::get<1>(coords);
+
             if (direction > 0) {
                 count += 1;
                 skip += 1;
@@ -330,6 +334,9 @@ bool run_interactive(run_state &r) {
                     {
                         std::lock_guard<std::mutex> lock(mutex_render);
                         queue_render.push(std::make_tuple(i.image_width(), i.image_height(), render_buffer));
+                    }
+                    if (complete && save_png) {
+                        png->write(i, suffix, ix);
                     }
                 }
                 return queue_generate.empty() && (hWnd != nullptr);
@@ -432,12 +439,20 @@ bool run_interactive(run_state &r) {
         case WM_RBUTTONUP: 
         case WM_MBUTTONUP:
         {
+            bool save_png = (wParam & MK_CONTROL) == MK_CONTROL; 
             int32_t zoom = 0;
-            if (uMsg == WM_LBUTTONUP) zoom = 1;
-            else if (uMsg == WM_RBUTTONUP) zoom = -1;
+
+            if (!save_png) {
+                if (uMsg == WM_LBUTTONUP) {
+                    zoom = 1;
+                }
+                else if (uMsg == WM_RBUTTONUP) {
+                    zoom = -1;
+                }
+            }
 
             std::lock_guard<std::mutex> lock(mutex_generate);
-            queue_generate.push(std::make_tuple(zoom, LOWORD(lParam), HIWORD(lParam)));
+            queue_generate.push(std::make_tuple(zoom, save_png, LOWORD(lParam), HIWORD(lParam)));
             break;
         }
         default:

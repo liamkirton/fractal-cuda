@@ -51,18 +51,25 @@ png_writer::png_writer(YAML::Node &run_config) {
 
     for (uint32_t i = 0; i < 4; ++i) {
         threads_.push_back(std::thread([this]() {
-            while (WaitForSingleObject(exit_event_, 500) != WAIT_OBJECT_0) {
+            while (true) {
                 std::tuple<uint64_t, uint64_t, const uint32_t *, std::string> image{ 0, 0, nullptr, "" };
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
-                    if (queue_.empty()) {
-                        continue;
+                    if (!queue_.empty()) {
+                        image = queue_.front();
+                        queue_.pop();
                     }
-                    image = queue_.front();
-                    queue_.pop();
+                    else if (WaitForSingleObject(exit_event_, 0) == WAIT_OBJECT_0) {
+                        break;
+                    }
                 }
-                write(image);
-                delete[] std::get<2>(image);
+                if (std::get<2>(image) != nullptr) { // i.e. !queue_.empty()
+                    write(image);
+                    delete[] std::get<2>(image);
+                }
+                else {
+                    Sleep(500);
+                }
             }
         }));
     }
@@ -93,10 +100,10 @@ void png_writer::write(std::tuple<uint64_t, uint64_t, const uint32_t *, std::str
     png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
     png_infop info_ptr = png_create_info_struct(png_ptr);
 
-    //if (setjmp(png_jmpbuf(png_ptr))) {
-    //    std::cout << "[!] ERROR: png::write(): libpng Exception" << std::endl;
-    //    return;
-    //}
+    if (setjmp(png_jmpbuf(png_ptr))) {
+        std::cout << "[!] ERROR: png::write(): libpng Exception" << std::endl;
+        return;
+    }
 
     tm tm_now{ 0 }; 
     __time64_t time_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
