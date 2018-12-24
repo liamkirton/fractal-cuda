@@ -455,6 +455,40 @@ bool run_interactive(run_state &r) {
             queue_generate.push(std::make_tuple(zoom, save_png, LOWORD(lParam), HIWORD(lParam)));
             break;
         }
+        case WM_KEYUP:
+        {
+            uint32_t delta = (GetKeyState(VK_CONTROL) & 0x8000) ? ((GetKeyState(VK_SHIFT) & 0x8000) ? 1 : 5) : 10;
+            uint32_t x = r.image_width / 2;
+            uint32_t y = r.image_height / 2;
+            int32_t zoom = 0;
+
+            switch (wParam) {
+            case VK_UP:
+                y -= delta;
+                break;
+            case VK_DOWN:
+                y += delta;
+                break;
+            case VK_LEFT:
+                x -= delta;
+                break;
+            case VK_RIGHT:
+                x += delta;
+                break;
+            case VK_PRIOR:
+                zoom = -1;
+                break;
+            case VK_NEXT:
+                zoom = 1;
+                break;
+            }
+
+            if ((x != r.image_width / 2) || (y != r.image_height / 2) || (zoom != 0)) {
+                std::lock_guard<std::mutex> lock(mutex_generate);
+                queue_generate.push(std::make_tuple(zoom, false, x, y));
+            }
+        }
+
         default:
             return DefWindowProc(hWnd, uMsg, wParam, lParam);
         }
@@ -484,7 +518,7 @@ bool run_interactive(run_state &r) {
     }
 
     hWnd = CreateWindow(wc.lpszClassName,
-        "CUDA Fractal",
+        "Fractal",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
@@ -633,9 +667,9 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
     std::stringstream suffix;
     suffix << std::setfill('0')
         << "ix=" << ix << "_"
-        << "re=" << std::setprecision(12) << f.re() << "_"
-        << "im=" << std::setprecision(12) << f.im() << "_"
-        << "scale=" << std::setprecision(12) << f.scale();
+        << "re=" << std::setprecision(24) << f.re() << "_"
+        << "im=" << std::setprecision(24) << f.im() << "_"
+        << "scale=" << std::setprecision(24) << f.scale();
 
     auto do_callback = [&](bool complete, bool render) {
         image i(f.image_width(), f.image_height(), f.image());
@@ -691,9 +725,9 @@ template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::v
     std::stringstream suffix;
     suffix << std::setfill('0')
         << "ix=" << ix << "_"
-        << "re=" << std::setprecision(12) << f.re() << "_"
-        << "im=" << std::setprecision(12) << f.im() << "_"
-        << "scale=" << std::setprecision(12) << f.scale();
+        << "re=" << std::setprecision(24) << f.re() << "_"
+        << "im=" << std::setprecision(24) << f.im() << "_"
+        << "scale=" << std::setprecision(24) << f.scale();
 
     auto do_callback = [&](bool complete, bool render) {
         image i(f.image_width(), f.image_height(), f.image());

@@ -73,8 +73,8 @@ struct kernel_reduce_params {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-constexpr double im_min = 1.5;
-constexpr double im_max = -1.5;
+constexpr double im_min = 3.0;
+constexpr double im_max = -3.0;
 constexpr double re_min = -3.0;
 constexpr double re_max = 3.0;
 

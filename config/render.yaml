@@ -1,0 +1,4 @@
+image_width: 8192
+image_height: 8192
+oversample: true
+escape_limit: 4194304

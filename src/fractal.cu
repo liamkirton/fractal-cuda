@@ -185,9 +185,9 @@ bool fractal<T>::generate(bool trial, bool interactive, std::function<bool(bool)
         return false;
     }
 
-    std::cout << "  [+] Re: " << re_ << std::endl
-        << "  [+] Im: " << im_ << std::endl
-        << "  [+] Sc: " << scale_ << std::endl;
+    std::cout << "  [+] Re: " << std::setprecision(24) << re_ << std::endl
+        << "  [+] Im: " << std::setprecision(24) << im_ << std::endl
+        << "  [+] Sc: " << std::setprecision(24) << scale_ << std::endl;
 
     if (trial) {
         std::cout << "  [+] Trial: " << trial_image_width_ << "x" << trial_image_height_ << " (" << sizeof(uint32_t) * trial_image_width_ * trial_image_height_ << ")" << std::endl;
@@ -696,6 +696,7 @@ __global__ void kernel_colour(kernel_chunk<T> *chunks, kernel_params<T> *params,
             sat = 0.0;
             val = 1.0;
             break;
+
         case 2:
         case 3:
             {
@@ -712,14 +713,27 @@ __global__ void kernel_colour(kernel_chunk<T> *chunks, kernel_params<T> *params,
                 hue *= 360.0;
             }
             break;
+
         case 4:
         case 5:
+        case 6:
+        case 7:
             {
                 if (mu < 2.71828182846) {
                     mu = 2.71828182846;
                 }
-                double t = log(escape_max) / log(mu);
-                t = t - floor(t);
+
+                double t = log(escape_max) / log(1.0 + mu);
+                if (params->colour_method_ < 6) {
+                    t = fmod(t, 2.0);
+                    if (t > 1.0) {
+                        t = 2.0 - t;
+                    }
+                }
+                else {
+                    t = fabs(sin(t));
+                }
+
                 hue = 0.0;
                 sat = 0.0;
                 val = 0.0;
@@ -732,18 +746,37 @@ __global__ void kernel_colour(kernel_chunk<T> *chunks, kernel_params<T> *params,
                 hue *= 360.0;
             }
             break;
-        case 6:
-        case 7:
+
+        case 8:
+        case 9:
             hue = 360.0 * log(mu) / log(escape_max);
             sat = 0.95;
             val = 1.0;
             break;
-        case 8:
-        case 9:
+
+        case 10:
+        case 11:
+        case 12:
+        case 13:
+        case 14:
+        case 15:
             if (mu < 2.71828182846) {
                 mu = 2.71828182846;
             }
-            hue = 360.0 * log(escape_max) / log(mu);
+            hue = log(escape_max) / log(1.0 + mu);
+            if (params->colour_method_ <= 11) {
+
+            }
+            else if (params->colour_method_ <= 13) {
+                hue = fmod(hue, 2.0);
+                if (hue > 1.0) {
+                    hue = 2.0 - hue;
+                }
+            }
+            else {
+                hue = fabs(sin(hue));
+            }
+            hue *= 360;
             sat = 0.95;
             val = 1.0;
             break;
