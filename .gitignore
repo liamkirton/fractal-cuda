@@ -13,3 +13,4 @@ vc*.pdb
 *.vcxproj.user
 *.png
 keys.json
+output
