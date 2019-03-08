@@ -20,6 +20,32 @@ struct kernel_chunk {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
+struct kernel_chunk_perturbation_reference {
+    uint64_t escape_;
+    uint64_t index_;
+    T re_c_;
+    T im_c_;
+    T re_;
+    T im_;
+    double re_d_[2048];
+    double im_d_[2048];
+};
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename T>
+struct kernel_chunk_perturbation {
+    uint32_t rid_;
+    uint64_t escape_;
+    double re_delta_0;
+    double im_delta_0;
+    double re_delta_n;
+    double im_delta_n;
+};
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename T>
 struct kernel_params {
     kernel_params(const uint32_t &image_width,
             const uint32_t &image_height,
@@ -80,14 +106,14 @@ constexpr double re_max = 3.0;
 
 #ifdef _DEBUG
     constexpr uint32_t default_cuda_groups = 128;
-    constexpr uint32_t default_cuda_threads = 256;
+    constexpr uint32_t default_cuda_threads = 128;
 
-    constexpr uint32_t default_escape_block = 4095;
-    constexpr uint32_t default_escape_limit = 8192;
+    constexpr uint32_t default_escape_block = 1024;
+    constexpr uint32_t default_escape_limit = 2048;
     constexpr double default_escape_radius = 16.0;
 
-    constexpr uint32_t default_image_width = 640;
-    constexpr uint32_t default_image_height = 480;
+    constexpr uint32_t default_image_width = 320;
+    constexpr uint32_t default_image_height = 320;
 #else
     constexpr uint32_t default_cuda_groups = 256;
     constexpr uint32_t default_cuda_threads = 1024;
@@ -187,6 +213,7 @@ public:
     }
 
 private:
+    bool dev_perturbation(kernel_params<T> &params, bool interactive, std::function<bool(bool)> callback);
     bool generate(kernel_params<T> &params, bool interactive, std::function<bool(bool)> callback);
     void pixel_to_coord(uint32_t x, uint32_t image_width, T &re, uint32_t y, uint32_t image_height, T &im);
     bool process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_chunk<T> *preview);
@@ -214,7 +241,7 @@ private:
     T im_c_;
 
     kernel_chunk<T> *chunk_buffer_;
-    kernel_chunk<T> *chunk_buffer_device_; 
+    kernel_chunk<T> *chunk_buffer_device_;
 
     uint32_t *image_;
     uint32_t *image_device_; 

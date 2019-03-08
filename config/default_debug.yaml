@@ -1,0 +1,69 @@
+###
+# CUDA
+###
+
+cuda_groups: 512
+cuda_threads: 512
+
+###
+# Colouring
+###
+
+colour_method: 2
+colour_palette:
+  - [0, 0, 0] # Points in set
+  - [205, 95, 15]
+  - [205, 95, 30]
+  - [205, 95, 50]
+  - [205, 100, 100]
+  - [175, 50, 100]
+  - [175, 0, 100]
+  - [100, 0, 100]
+  - [58, 0, 100]
+  - [58, 0, 100]
+  - [58, 100, 100]
+  - [58, 100, 100]
+  - [30, 100, 100]
+  - [25, 100, 100]
+  - [20, 75, 100]
+
+###
+# Fractal
+###
+
+escape_block: 2048
+escape_limit: 8192
+escape_radius: 16.0
+
+re: -0.5
+im: 0.0
+re_c: ""
+im_c: ""
+scale: 1.0
+scale_factor: 0.75
+
+###
+# Image
+###
+
+image_directory: "output"
+image_name_prefix: ""
+
+image_width: 512
+image_height: 512
+
+###
+# Run
+###
+
+count: 1
+skip: 0
+
+follow_variance: false
+random: false
+reset: false
+trial: true
+
+interactive: false
+oversample: false
+oversample_multiplier: 2

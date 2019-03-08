@@ -101,7 +101,11 @@ int main(int argc, char *argv[]) {
     std::vector<std::string> inst_config_files;
 
     try {
+#ifdef _DEBUG
+        default_config = YAML::LoadFile("config/default_debug.yaml");
+#else
         default_config = YAML::LoadFile("config/default.yaml");
+#endif
     }
     catch (YAML::BadFile &) {
         std::cout << "[!] ERROR: Cannot Load config/default.yaml" << std::endl;
@@ -577,47 +581,47 @@ bool run_generate(run_state &r, std::function<bool(bool, bool, image &, std::str
             std::cout << "[+] Generating Fractal #" << i << std::endl
                 << "  [+] Precison Bit: " << precision_bit;
 
-            if (precision_bit < 53) {
-                run_step<0, 0>(r, i, palette, callback);
-            }
-            else if (precision_bit < 32 * 2) {
+            //if (precision_bit < 53) {
+            //    run_step<0, 0>(r, i, palette, callback);
+            //}
+            //else if (precision_bit < 32 * 2) {
                 run_step<1, 2>(r, i, palette, callback);
-            }
-            else if (precision_bit < 32 * 3) {
-                run_step<1, 3>(r, i, palette, callback);
-            }
-            else if (precision_bit < 32 * 4) {
-                run_step<1, 4>(r, i, palette, callback);
-            }
+            //}
+            //else if (precision_bit < 32 * 3) {
+            //    run_step<1, 3>(r, i, palette, callback);
+            //}
+            //else if (precision_bit < 32 * 4) {
+            //    run_step<1, 4>(r, i, palette, callback);
+            //}
 #ifndef _DEBUG
-            else if (precision_bit < 32 * 6) {
-                run_step<1, 6>(r, i, palette, callback);
-            }
-            else if (precision_bit < 32 * 8) {
-                run_step<1, 8>(r, i, palette, callback);
-            }
-            else if (precision_bit < 32 * 12) {
-                run_step<1, 12>(r, i, palette, callback);
-            }
-            else if (precision_bit < 32 * 16) {
-                run_step<1, 16>(r, i, palette, callback);
-            }
-            else if (precision_bit < 32 * 20) {
-                run_step<1, 20>(r, i, palette, callback);
-            }
-            else if (precision_bit < 32 * 24) {
-                run_step<1, 24>(r, i, palette, callback);
-            }
-            else if (precision_bit < 32 * 28) {
-                run_step<1, 28>(r, i, palette, callback);
-            }
-            else if (precision_bit < 32 * 32) {
-                run_step<1, 32>(r, i, palette, callback);
-            }
+            //else if (precision_bit < 32 * 6) {
+            //    run_step<1, 6>(r, i, palette, callback);
+            //}
+            //else if (precision_bit < 32 * 8) {
+            //    run_step<1, 8>(r, i, palette, callback);
+            //}
+            //else if (precision_bit < 32 * 12) {
+            //    run_step<1, 12>(r, i, palette, callback);
+            //}
+            //else if (precision_bit < 32 * 16) {
+            //    run_step<1, 16>(r, i, palette, callback);
+            //}
+            //else if (precision_bit < 32 * 20) {
+            //    run_step<1, 20>(r, i, palette, callback);
+            //}
+            //else if (precision_bit < 32 * 24) {
+            //    run_step<1, 24>(r, i, palette, callback);
+            //}
+            //else if (precision_bit < 32 * 28) {
+            //    run_step<1, 28>(r, i, palette, callback);
+            //}
+            //else if (precision_bit < 32 * 32) {
+            //    run_step<1, 32>(r, i, palette, callback);
+            //}
 #endif
-            else {
-                std::cout << " - UNSUPPORTED" << std::endl;
-            }
+            //else {
+            //    std::cout << " - UNSUPPORTED" << std::endl;
+            //}
         }
 
         scale.multiply(r.scale_factor);
