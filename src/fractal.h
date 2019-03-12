@@ -37,10 +37,16 @@ template<typename T>
 struct kernel_chunk_perturbation {
     uint32_t rid_;
     uint64_t escape_;
-    double re_delta_0;
-    double im_delta_0;
-    double re_delta_n;
-    double im_delta_n;
+    union {
+        double re_delta_0_;
+        double re_;
+    };
+    union {
+        double im_delta_0_;
+        double im_;
+    };
+    double re_delta_n_;
+    double im_delta_n_;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

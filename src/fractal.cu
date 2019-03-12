@@ -20,19 +20,22 @@
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+constexpr uint32_t grid_resX = 1;
+constexpr uint32_t grid_resY = 1;
+
 template class fractal<double>;
 template class fractal<fixed_point<1, 2>>;
-//template class fractal<fixed_point<1, 3>>;
-//template class fractal<fixed_point<1, 4>>;
 #ifndef _DEBUG
-//template class fractal<fixed_point<1, 6>>;
-//template class fractal<fixed_point<1, 8>>;
-//template class fractal<fixed_point<1, 12>>;
-//template class fractal<fixed_point<1, 16>>;
-//template class fractal<fixed_point<1, 20>>;
-//template class fractal<fixed_point<1, 24>>;
-//template class fractal<fixed_point<1, 28>>;
-//template class fractal<fixed_point<1, 32>>;
+template class fractal<fixed_point<1, 3>>;
+template class fractal<fixed_point<1, 4>>;
+template class fractal<fixed_point<1, 6>>;
+template class fractal<fixed_point<1, 8>>;
+template class fractal<fixed_point<1, 12>>;
+template class fractal<fixed_point<1, 16>>;
+template class fractal<fixed_point<1, 20>>;
+template class fractal<fixed_point<1, 24>>;
+template class fractal<fixed_point<1, 28>>;
+template class fractal<fixed_point<1, 32>>;
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -53,8 +56,7 @@ template<uint32_t I, uint32_t F> __global__ void kernel_iterate(kernel_chunk<fix
 template<uint32_t I, uint32_t F> __global__ void kernel_iterate_perturbation(kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks, kernel_chunk_perturbation<fixed_point<I, F>> *chunks, kernel_params<fixed_point<I, F>> *params);
 template<uint32_t I, uint32_t F> __global__ void kernel_iterate_perturbation_reference(kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks, kernel_params<fixed_point<I, F>> *params);
 
-template<typename T> __global__ void kernel_colour(kernel_chunk<T> *chunks, kernel_params<T> *params, uint32_t *block_image);
-template<typename T> __global__ void kernel_colour_perturbation(kernel_chunk_perturbation<T> *chunks, kernel_params<T> *params, uint32_t *block_image);
+template<typename S, typename T> __global__ void kernel_colour(S *chunks, kernel_params<T> *params, uint32_t *block_image);
 
 template<typename T>
 __global__ void kernel_reduce(kernel_chunk<T> *chunks, kernel_params<T> *params, uint32_t chunk_count);
@@ -188,6 +190,7 @@ bool fractal<T>::generate(bool trial, bool interactive, std::function<bool(bool)
 
     //kernel_params<T> params_trial(trial_image_width_, trial_image_height_, escape_block_, escape_limit_, colour_method_, re_, im_, scale_, re_c_, im_c_);
     kernel_params<T> params(image_width_, image_height_, escape_block_, escape_limit_, colour_method_, re_, im_, scale_, re_c_, im_c_);
+    params.escape_block_ = (params.escape_block_ > kernel_chunk_perturbation_reference<T>::re_d_) ? 2048 : params.escape_block_;
 
     if (/*(chunk_buffer_device_ == nullptr) || */(image_device_ == nullptr)) {
         return false;
@@ -247,7 +250,7 @@ bool fractal<T>::dev_perturbation(kernel_params<T> &params, bool interactive, st
     }
 
     kernel_chunk_perturbation_reference<T> *chunk_reference_buffer_device_{ nullptr };
-    cudaMalloc(&chunk_reference_buffer_device_, 16 * 16 * sizeof(kernel_chunk_perturbation_reference<T>));
+    cudaMalloc(&chunk_reference_buffer_device_, grid_resX * grid_resY * sizeof(kernel_chunk_perturbation_reference<T>));
     if (chunk_reference_buffer_device_ == nullptr) {
         return false;
     }
@@ -265,7 +268,7 @@ bool fractal<T>::dev_perturbation(kernel_params<T> &params, bool interactive, st
         chunk_count++;
     }
 
-    if ((cudaError = cudaMemset(chunk_reference_buffer_device_, 0, 16 * 16 * sizeof(kernel_chunk_perturbation_reference<T>))) != cudaSuccess) {
+    if ((cudaError = cudaMemset(chunk_reference_buffer_device_, 0, grid_resX * grid_resY * sizeof(kernel_chunk_perturbation_reference<T>))) != cudaSuccess) {
         std::cout << std::endl << "[!] ERROR: cudaMemset(): " << cudaError << std::endl;
         return false;
     }
@@ -276,12 +279,12 @@ bool fractal<T>::dev_perturbation(kernel_params<T> &params, bool interactive, st
     }
 
     uint32_t escape_count = static_cast<uint32_t>(escape_limit_ / escape_block_);
-    for (uint64_t escape_i = 0; escape_i < escape_count; ++escape_i) {
-        for (uint64_t chunk_i = 0; chunk_i < chunk_count; ++chunk_i) {
-            uint32_t chunk_offset = chunk_i * cuda_groups_ * cuda_threads_;
-            uint32_t chunk_size = std::min((params.image_width_ * params.image_height_) - chunk_offset, cuda_groups_ * cuda_threads_);
-            uint32_t chunk_cuda_groups = chunk_size / cuda_threads_;
+    for (uint64_t chunk_i = 0; chunk_i < chunk_count; ++chunk_i) {
+        uint32_t chunk_offset = chunk_i * cuda_groups_ * cuda_threads_;
+        uint32_t chunk_size = std::min((params.image_width_ * params.image_height_) - chunk_offset, cuda_groups_ * cuda_threads_);
+        uint32_t chunk_cuda_groups = chunk_size / cuda_threads_;
 
+        for (uint64_t escape_i = 0; escape_i < escape_count; ++escape_i) {
             std::cout << "                                \r    [+] Chunk: " << chunk_i + 1 << " / "
                 << chunk_count
                 << ", Block: " << escape_i * escape_block_ << " / " << escape_limit_ << std::flush;
@@ -303,20 +306,20 @@ bool fractal<T>::dev_perturbation(kernel_params<T> &params, bool interactive, st
             //}
 
             if (escape_i == 0) {
-                kernel_init_mandelbrot_perturbation_reference<<<16, 16>>>(chunk_reference_buffer_device_, params_device);
+                kernel_init_mandelbrot_perturbation_reference << <grid_resY, grid_resX >> > (chunk_reference_buffer_device_, params_device);
                 if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                     std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_init_mandelbrot_perturbation_reference ]: " << cudaError << std::endl;
                     break;
                 }
 
-                kernel_init_mandelbrot_perturbation<<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_reference_buffer_device_, chunk_buffer_device_, params_device);
+                kernel_init_mandelbrot_perturbation << <static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_) >> > (chunk_reference_buffer_device_, chunk_buffer_device_, params_device);
                 if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                     std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_init_mandelbrot_perturbation ]: " << cudaError << std::endl;
                     break;
                 }
             }
 
-            kernel_iterate_perturbation_reference<<<16, 16>>>(chunk_reference_buffer_device_, params_device);
+            kernel_iterate_perturbation_reference<<<grid_resY, grid_resX>>>(chunk_reference_buffer_device_, params_device);
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                 std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_iterate_perturbation_reference ]: " << cudaError << std::endl;
                 break;
@@ -328,39 +331,31 @@ bool fractal<T>::dev_perturbation(kernel_params<T> &params, bool interactive, st
                 break;
             }
 
-            //if ((cudaError = cudaMemcpy(&chunk_buffer_[chunk_offset],
-            //    chunk_buffer_device_,
-            //    chunk_size * sizeof(kernel_chunk<T>),
-            //    cudaMemcpyDeviceToHost)) != cudaSuccess) {
-            //        std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
-            //        break;
-            //}
-            //
-
-            if ((cudaError = cudaMemset(image_device_, 0, cuda_groups_ * cuda_threads_ * sizeof(uint32_t))) != cudaSuccess) {
-                std::cout << std::endl << "[!] ERROR: cudaMemset(): " << cudaError << std::endl;
-                break;
-            }
-
-            kernel_colour_perturbation<T><<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device, image_device_);
-            if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
-                std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_colour ]: " << cudaError << std::endl;
-                break;
-            }
-
-            if ((cudaError = cudaMemcpy(&image_[chunk_offset],
-                image_device_,
-                chunk_size * sizeof(uint32_t),
-                cudaMemcpyDeviceToHost)) != cudaSuccess) {
-                std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
-                break;
-            }
-
             if (!callback(params.escape_range_min_ < ((escape_i + 1) * params.escape_block_))) {
                 std::cout << std::endl << "    [+] Aborted.";
                 break;
             }
         }
+
+        if ((cudaError = cudaMemset(image_device_, 0, cuda_groups_ * cuda_threads_ * sizeof(uint32_t))) != cudaSuccess) {
+            std::cout << std::endl << "[!] ERROR: cudaMemset(): " << cudaError << std::endl;
+            break;
+        }
+
+        kernel_colour<kernel_chunk_perturbation<T>, T><<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device, image_device_);
+        if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
+            std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_colour ]: " << cudaError << std::endl;
+            break;
+        }
+
+        if ((cudaError = cudaMemcpy(&image_[chunk_offset],
+            image_device_,
+            chunk_size * sizeof(uint32_t),
+            cudaMemcpyDeviceToHost)) != cudaSuccess) {
+            std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
+            break;
+        }
+
     }
 
     cudaFree(params.palette_);
@@ -573,7 +568,7 @@ bool fractal<T>::generate(kernel_params<T> &params, bool interactive, std::funct
                 break;
             }
 
-            kernel_colour<T><<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device, image_device_);
+            kernel_colour<kernel_chunk<T>, T><<<static_cast<uint32_t>(chunk_cuda_groups), static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device, image_device_);
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                 std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_colour ]: " << cudaError << std::endl;
                 break;
@@ -748,15 +743,17 @@ __global__ void kernel_init_mandelbrot_perturbation(kernel_chunk_perturbation_re
     const double pixel_x = (params->chunk_offset_ + tid) % params->image_width_;
     const double pixel_y = (params->chunk_offset_ + tid) / params->image_width_;
 
-    const uint32_t resolution_x = params->image_width_ / 16;
-    const uint32_t resolution_y = params->image_height_ / 16;
+    const uint32_t resolution_x = params->image_width_ / grid_resX;
+    const uint32_t resolution_y = params->image_height_ / grid_resY;
 
     const uint32_t ref_pixel_x = pixel_x / resolution_x;
     const uint32_t ref_pixel_y = pixel_y / resolution_y;
 
     kernel_chunk_perturbation<fixed_point<I, F>> *chunk = &chunks[tid];
-    chunk->rid_ = ref_pixel_x + 16 * ref_pixel_y;
-    chunk->escape_ = params->escape_limit_;
+    chunk->escape_ = params->escape_limit_; 
+    chunk->rid_ = ref_pixel_x + grid_resX * ref_pixel_y;
+
+    kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunk = &ref_chunks[chunk->rid_];
 
     fixed_point<I, F> re_pert(re_min + pixel_x * (re_max - re_min) / params->image_width_);
     fixed_point<I, F> im_pert(im_max - pixel_y * (im_max - im_min) / params->image_height_);
@@ -765,19 +762,15 @@ __global__ void kernel_init_mandelbrot_perturbation(kernel_chunk_perturbation_re
     re_pert.add(params->re_);
     im_pert.add(params->im_);
 
-    fixed_point<I, F> re_delta(ref_chunks[chunk->rid_].re_c_);
-    fixed_point<I, F> im_delta(ref_chunks[chunk->rid_].im_c_);
+    fixed_point<I, F> re_delta(ref_chunk->re_c_);
+    fixed_point<I, F> im_delta(ref_chunk->im_c_);
     re_delta.negate();
     im_delta.negate();
     re_delta.add(re_pert);
     im_delta.add(im_pert);
 
-    chunk->re_delta_0 = chunk->re_delta_n = static_cast<double>(re_delta);
-    chunk->im_delta_0 = chunk->im_delta_n = static_cast<double>(im_delta);
-    //chunk->re_c_.set(re_c);
-    //chunk->im_c_.set(im_c);
-    //chunk->re_.set(re_c);
-    //chunk->im_.set(im_c);
+    chunk->re_delta_0_ = chunk->re_delta_n_ = static_cast<double>(re_delta);
+    chunk->im_delta_0_ = chunk->im_delta_n_ = static_cast<double>(im_delta);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -791,8 +784,8 @@ template<uint32_t I, uint32_t F>
 __global__ void kernel_init_mandelbrot_perturbation_reference(kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks, kernel_params<fixed_point<I, F>> *params) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-    const uint32_t resolution_x = params->image_width_ / 16;
-    const uint32_t resolution_y = params->image_height_ / 16;
+    const uint32_t resolution_x = params->image_width_ / grid_resX;
+    const uint32_t resolution_y = params->image_height_ / grid_resY;
 
     const double pixel_x = (resolution_x / 2) + threadIdx.x * resolution_x;
     const double pixel_y = (resolution_y / 2) + blockIdx.x * resolution_y;
@@ -906,24 +899,28 @@ __global__ void kernel_iterate_perturbation(kernel_chunk_perturbation_reference<
     kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunk = &ref_chunks[chunk->rid_]; 
 
     const uint64_t escape = chunk->escape_;
-    const uint64_t escape_block = (params->escape_block_ >= 2048) ? 2048 : params->escape_block_;
+    const uint64_t escape_block = params->escape_block_;
     const uint64_t escape_limit = params->escape_limit_;
 
     if (escape == escape_limit) {
-        double re_delta_0 = chunk->re_delta_0;
-        double im_delta_0 = chunk->im_delta_0;
-        double re_delta_n = chunk->re_delta_n;
-        double im_delta_n = chunk->im_delta_n;
+        double re_delta_0 = chunk->re_delta_0_;
+        double im_delta_0 = chunk->im_delta_0_;
+        double re_delta_n = chunk->re_delta_n_;
+        double im_delta_n = chunk->im_delta_n_;
 
-        for (uint64_t i = 0; (i < escape_block) && (i < ref_chunk->index_); ++i) {
+        uint64_t ref_index = ref_chunk->index_;
+
+        for (uint64_t i = 0; (i < escape_block) && (i < ref_index); ++i) {
             double re_ref = ref_chunk->re_d_[i];
             double im_ref = ref_chunk->im_d_[i];
 
             double re_y = re_ref + re_delta_n;
             double im_y = im_ref + im_delta_n;
 
-            if ((re_y * re_y + im_y * im_y) >= 16.0) {
+            if ((re_y * re_y + im_y * im_y) >= default_escape_radius_square) {
                 chunk->escape_ = i + params->escape_i_ * escape_block;
+                chunk->re_ = re_y;
+                chunk->im_ = im_y;
                 break;
             }
 
@@ -939,8 +936,8 @@ __global__ void kernel_iterate_perturbation(kernel_chunk_perturbation_reference<
             im_delta_n = im_delta_n1;
         }
 
-        chunk->re_delta_n = re_delta_n;
-        chunk->im_delta_n = im_delta_n;
+        chunk->re_delta_n_ = re_delta_n;
+        chunk->im_delta_n_ = im_delta_n;
     }
 }
 
@@ -962,7 +959,7 @@ __global__ void kernel_iterate_perturbation_reference(kernel_chunk_perturbation_
     fixed_point<I, F> im(chunk->im_);
 
     const uint64_t escape = chunk->escape_;
-    const uint64_t escape_block = (params->escape_block_ >= 2048) ? 2048 : params->escape_block_;
+    const uint64_t escape_block = params->escape_block_;
     const uint64_t escape_limit = params->escape_limit_;
 
     fixed_point<I, F> re_prod;
@@ -970,7 +967,7 @@ __global__ void kernel_iterate_perturbation_reference(kernel_chunk_perturbation_
     re.multiply(re, re_prod);
     im.multiply(im, im_prod);
 
-    chunk->index_ = 0;
+    uint64_t index = 0;
 
     if (escape == escape_limit) {
         for (uint64_t i = 0; i < escape_block; ++i) {
@@ -986,9 +983,9 @@ __global__ void kernel_iterate_perturbation_reference(kernel_chunk_perturbation_
             re.multiply(re, re_prod);
             im.multiply(im, im_prod);
 
-            chunk->re_d_[chunk->index_] = static_cast<double>(re);
-            chunk->im_d_[chunk->index_] = static_cast<double>(im);
-            chunk->index_++;
+            chunk->re_d_[index] = static_cast<double>(re);
+            chunk->im_d_[index] = static_cast<double>(im);
+            index++;
 
             if ((static_cast<double>(re_prod) + static_cast<double>(im_prod)) >= default_escape_radius_square) {
                 chunk->escape_ = i + params->escape_i_ * escape_block;
@@ -996,6 +993,7 @@ __global__ void kernel_iterate_perturbation_reference(kernel_chunk_perturbation_
             }
         }
 
+        chunk->index_ = index;
         chunk->re_.set(re);
         chunk->im_.set(im);
     }
@@ -1003,11 +1001,11 @@ __global__ void kernel_iterate_perturbation_reference(kernel_chunk_perturbation_
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename T>
-__global__ void kernel_colour(kernel_chunk<T> *chunks, kernel_params<T> *params, uint32_t *image) {
+template<typename S, typename T>
+__global__ void kernel_colour(S *chunks, kernel_params<T> *params, uint32_t *image) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-    kernel_chunk<T> *chunk = &chunks[tid];
+    S *chunk = &chunks[tid];
 
     double hue = params->set_hue_;
     double sat = params->set_sat_;
@@ -1021,78 +1019,78 @@ __global__ void kernel_colour(kernel_chunk<T> *chunks, kernel_params<T> *params,
         double mu = 1.0 + escape - log2(0.5 * log(abs) / log(default_escape_radius));
         if (mu < 1.0) mu = 1.0;
 
-        switch (params->colour_method_) {
+        switch (13/*params->colour_method_*/) {
         default:
-        //case 0:
-        //case 1:
-        //    hue = 0.0;
-        //    sat = 0.0;
-        //    val = 1.0;
-        //    break;
+        case 0:
+        case 1:
+            hue = 0.0;
+            sat = 0.95;
+            val = 1.0;
+            break;
 
-        //case 2:
-        //case 3:
-        //    {
-        //        double t = log(mu) / log(escape_max);
-        //        hue = 0.0;
-        //        sat = 0.0;
-        //        val = 0.0;
-        //        for (uint32_t i = 0; i < params->palette_count_; ++i) {
-        //            double poly = pow(t, static_cast<double>(i)) * pow(1.0 - t, static_cast<double>(params->palette_count_ - 1 - i));
-        //            hue += params->palette_[3 * i + 0] * poly;
-        //            sat += params->palette_[3 * i + 1] * poly;
-        //            val += params->palette_[3 * i + 2] * poly;
-        //        }
-        //        hue *= 360.0;
-        //    }
-        //    break;
+        case 2:
+        case 3:
+            {
+                double t = log(mu) / log(escape_max);
+                hue = 0.0;
+                sat = 0.0;
+                val = 0.0;
+                for (uint32_t i = 0; i < params->palette_count_; ++i) {
+                    double poly = pow(t, static_cast<double>(i)) * pow(1.0 - t, static_cast<double>(params->palette_count_ - 1 - i));
+                    hue += params->palette_[3 * i + 0] * poly;
+                    sat += params->palette_[3 * i + 1] * poly;
+                    val += params->palette_[3 * i + 2] * poly;
+                }
+                hue *= 360.0;
+            }
+            break;
 
-        //case 4:
-        //case 5:
-        //case 6:
-        //case 7:
-        //    {
-        //        if (mu < 2.71828182846) {
-        //            mu = 2.71828182846;
-        //        }
+        case 4:
+        case 5:
+        case 6:
+        case 7:
+            {
+                if (mu < 2.71828182846) {
+                    mu = 2.71828182846;
+                }
 
-        //        double t = log(escape_max) / log(1.0 + mu);
-        //        if (params->colour_method_ < 6) {
-        //            t = fmod(t, 2.0);
-        //            if (t > 1.0) {
-        //                t = 2.0 - t;
-        //            }
-        //        }
-        //        else {
-        //            t = fabs(sin(t));
-        //        }
+                double t = log(escape_max) / log(1.0 + mu);
+                if (params->colour_method_ < 6) {
+                    t = fmod(t, 2.0);
+                    if (t > 1.0) {
+                        t = 2.0 - t;
+                    }
+                }
+                else {
+                    t = fabs(sin(t));
+                }
 
-        //        hue = 0.0;
-        //        sat = 0.0;
-        //        val = 0.0;
-        //        for (uint32_t i = 0; i < params->palette_count_; ++i) {
-        //            double poly = pow(t, static_cast<double>(i)) * pow(1.0 - t, static_cast<double>(params->palette_count_ - 1 - i));
-        //            hue += params->palette_[3 * i + 0] * poly;
-        //            sat += params->palette_[3 * i + 1] * poly;
-        //            val += params->palette_[3 * i + 2] * poly;
-        //        }
-        //        hue *= 360.0;
-        //    }
-        //    break;
+                hue = 0.0;
+                sat = 0.0;
+                val = 0.0;
+                for (uint32_t i = 0; i < params->palette_count_; ++i) {
+                    double poly = pow(t, static_cast<double>(i)) * pow(1.0 - t, static_cast<double>(params->palette_count_ - 1 - i));
+                    hue += params->palette_[3 * i + 0] * poly;
+                    sat += params->palette_[3 * i + 1] * poly;
+                    val += params->palette_[3 * i + 2] * poly;
+                }
+                hue *= 360.0;
+            }
+            break;
 
-        //case 8:
-        //case 9:
-            //hue = 360.0 * log(mu) / log(escape_max);
-            //sat = 0.95;
-            //val = 1.0;
-            //break;
+        case 8:
+        case 9:
+            hue = 360.0 * log(mu) / log(escape_max);
+            sat = 0.95;
+            val = 1.0;
+            break;
 
-        //case 10:
-        //case 11:
-        //case 12:
-        //case 13:
-        //case 14:
-        //case 15:
+        case 10:
+        case 11:
+        case 12:
+        case 13:
+        case 14:
+        case 15:
             if (mu < 2.71828182846) {
                 mu = 2.71828182846;
             }
@@ -1118,66 +1116,6 @@ __global__ void kernel_colour(kernel_chunk<T> *chunks, kernel_params<T> *params,
         if (params->colour_method_ % 2 == 1) {
             sat = 0.95 - log(2.0) + log(0.5 * log(abs));
         }
-    }
-
-    hue = fmod(hue, 360.0);
-    hue /= 60.0;
-
-    double hue_floor = floor(hue);
-    double hue_fract = hue - hue_floor;
-    double p = val * (1.0 - sat);
-    double q = val * (1.0 - sat * hue_fract);
-    double t = val * (1.0 - sat * (1.0 - hue_fract));
-
-    double r;
-    double g;
-    double b;
-
-    switch (static_cast<unsigned char>(hue_floor) % 6) {
-    case 0:
-        r = val; g = t; b = p;
-        break;
-    case 1:
-        r = q; g = val; b = p;
-        break;
-    case 2:
-        r = p; g = val; b = t;
-        break;
-    case 3:
-        r = p; g = q; b = val;
-        break;
-    case 4:
-        r = t; g = p; b = val;
-        break;
-    case 5:
-        r = val; g = p; b = q;
-        break;
-    }
-
-    image[tid] =
-        (static_cast<unsigned char>(r * 255.0)) |
-        (static_cast<unsigned char>(g * 255.0) << 8) |
-        (static_cast<unsigned char>(b * 255.0) << 16) |
-        (0xff << 24);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<typename T>
-__global__ void kernel_colour_perturbation(kernel_chunk_perturbation<T> *chunks, kernel_params<T> *params, uint32_t *image) {
-    const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
-
-    kernel_chunk_perturbation<T> *chunk = &chunks[tid];
-
-    double hue = params->set_hue_;
-    double sat = params->set_sat_;
-    double val = params->set_val_;
-
-    if (chunk->escape_ < params->escape_limit_) {
-        double escape = static_cast<double>(chunk->escape_);
-        hue = 360.0 * log(escape + 1.0) / log(static_cast<double>(params->escape_limit_));
-        sat = 0.95;
-        val = 1.0;
     }
 
     hue = fmod(hue, 360.0);
