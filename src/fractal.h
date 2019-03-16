@@ -81,6 +81,8 @@ struct kernel_params {
     uint8_t colour_method_;
     uint32_t chunk_offset_;
 
+    uint32_t rid_;
+
     T re_;
     T im_;
     T scale_;
