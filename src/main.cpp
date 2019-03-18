@@ -94,7 +94,7 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
 int main(int argc, char *argv[]) {
     std::cout << std::endl
         << "CUDA Fractal Generator" << std::endl
-        << "(C)2018 Liam Kirton <liam@int3.ws>" << std::endl
+        << "(C)2018-19 Liam Kirton <liam@int3.ws>" << std::endl
         << std::endl;
 
     YAML::Node default_config;
