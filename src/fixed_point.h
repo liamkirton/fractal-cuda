@@ -43,6 +43,31 @@ public:
         return get_string();
     }
 
+    inline __host__ __device__ fixed_point<I, F>& operator=(const fixed_point<I, F>& v) {
+        set(v);
+        return *this;
+    }
+
+    inline __host__ __device__ fixed_point<I, F>& operator+=(const double& v) {
+        add(v);
+        return *this;
+    }
+
+    inline __host__ __device__ fixed_point<I, F>& operator+=(const fixed_point<I, F>& v) {
+        add(v);
+        return *this;
+    }
+
+    inline __host__ __device__ fixed_point<I, F>& operator*=(const double& v) {
+        multiply(v);
+        return *this;
+    }
+
+    inline __host__ __device__ fixed_point<I, F>& operator*=(const fixed_point<I, F>& v) {
+        multiply(v);
+        return *this;
+    }
+
     inline __host__ __device__ uint32_t bit_get(const uint64_t i) const {
         if (i < (I + F) * 32) {
             return (data[i / 32] & (1 << (i % 32))) >> (i % 32);

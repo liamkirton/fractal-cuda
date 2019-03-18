@@ -35,16 +35,12 @@ escape_block: 2048
 escape_limit: 8192
 escape_radius: 16.0
 
-#re: -0.5
-#im: 0.0
+re: -0.5
+im: 0.0
 re_c: ""
 im_c: ""
-#scale: 1.0
+scale: 1.0
 scale_factor: 0.75
-
-re: 0.16008284883560522
-im: 0.5725060571509984
-scale: 0.00000244
 
 ###
 # Image

@@ -27,15 +27,19 @@ struct kernel_chunk_perturbation_reference {
     T im_c_;
     T re_;
     T im_;
+#ifdef _DEBUG
+    double re_d_[256];
+    double im_d_[256];
+#else
     double re_d_[2048];
     double im_d_[2048];
+#endif
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
 struct kernel_chunk_perturbation {
-    uint32_t rid_;
     uint64_t escape_;
     union {
         double re_delta_0_;
@@ -68,6 +72,7 @@ struct kernel_params {
                 escape_i_(0), escape_range_min_(0), escape_range_max_(escape_limit),
                 chunk_offset_(0),
                 re_(re), im_(im), scale_(scale), re_c_(re_c), im_c_(im_c),
+                have_ref_(false), re_ref_(0), im_ref_(0),
                 set_hue_(0.0), set_sat_(0.0), set_val_(0.0), palette_(nullptr), palette_count_(0) {};
     uint32_t image_width_;
     uint32_t image_height_;
@@ -81,13 +86,15 @@ struct kernel_params {
     uint8_t colour_method_;
     uint32_t chunk_offset_;
 
-    uint32_t rid_;
-
     T re_;
     T im_;
     T scale_;
     T re_c_;
     T im_c_;
+
+    bool have_ref_;
+    T re_ref_;
+    T im_ref_;
 
     double set_hue_;
     double set_sat_;
@@ -222,6 +229,7 @@ public:
 
 private:
     bool dev_perturbation(kernel_params<T> &params, bool interactive, std::function<bool(bool)> callback);
+    bool dev_perturbation_get_ref(kernel_params<T> &params, bool interactive, std::function<bool(bool)> callback);
     bool generate(kernel_params<T> &params, bool interactive, std::function<bool(bool)> callback);
     void pixel_to_coord(uint32_t x, uint32_t image_width, T &re, uint32_t y, uint32_t image_height, T &im);
     bool process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_chunk<T> *preview);
