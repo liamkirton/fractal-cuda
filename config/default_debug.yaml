@@ -32,7 +32,7 @@ colour_palette:
 ###
 
 escape_block: 2048
-escape_limit: 8192
+escape_limit: 65536
 escape_radius: 16.0
 
 re: -0.5

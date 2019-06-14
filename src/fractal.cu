@@ -20,13 +20,13 @@
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-constexpr uint32_t grid_resX = 32;
-constexpr uint32_t grid_resY = 32;
+constexpr uint32_t grid_resX = 128;
+constexpr uint32_t grid_resY = 128;
 
 template class fractal<double>;
 template class fractal<fixed_point<1, 2>>;
+template class fractal<fixed_point<1, 3>>; 
 #ifndef _DEBUG
-template class fractal<fixed_point<1, 3>>;
 template class fractal<fixed_point<1, 4>>;
 template class fractal<fixed_point<1, 6>>;
 template class fractal<fixed_point<1, 8>>;
@@ -269,8 +269,8 @@ bool fractal<T>::dev_perturbation_get_ref(kernel_params<T> &params, bool interac
 
     cudaError_t cudaError{ cudaSuccess };
 
-    for (uint32_t x = 0; x < 8; ++x) {
-        std::cout << "dev_get_ref: " << x << std::endl;
+    for (uint32_t ref_i = 0; ref_i < 4; ++ref_i) {
+        std::cout << "                                \r    [+] Ref Chunk: " << ref_i + 1 << std::flush;
 
         params.chunk_offset_ = 0;
         params.escape_i_ = 0;
@@ -319,7 +319,7 @@ bool fractal<T>::dev_perturbation_get_ref(kernel_params<T> &params, bool interac
             }
         }
 
-        std::cout << "re_ref: " << params.re_ref_ << ", im_ref: " << params.im_ref_ << std::endl;
+        std::cout << ", re: " << params.re_ref_ << ", im: " << params.im_ref_ << std::flush;
 
         params.re_ = params.re_ref_;
         params.im_ = params.im_ref_;

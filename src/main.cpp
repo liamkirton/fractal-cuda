@@ -587,10 +587,10 @@ bool run_generate(run_state &r, std::function<bool(bool, bool, image &, std::str
             else */if (precision_bit < 32 * 2) {
                 run_step<1, 2>(r, i, palette, callback);
             }
-#ifndef _DEBUG
             else if (precision_bit < 32 * 3) {
                 run_step<1, 3>(r, i, palette, callback);
             }
+#ifndef _DEBUG
             else if (precision_bit < 32 * 4) {
                 run_step<1, 4>(r, i, palette, callback);
             }
