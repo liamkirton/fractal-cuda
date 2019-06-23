@@ -38,9 +38,9 @@ struct kernel_chunk_perturbation_reference {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename T>
 struct kernel_chunk_perturbation {
     uint64_t escape_;
+    uint32_t ref_;
     union {
         double re_delta_0_;
         double re_;

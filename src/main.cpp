@@ -17,6 +17,7 @@
 #include <tuple>
 #include <vector>
 
+#define _NOEXCEPT noexcept
 #include <yaml-cpp/yaml.h>
 
 #include "cuda_runtime.h"
@@ -671,13 +672,13 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
     std::stringstream suffix;
     suffix << std::setfill('0')
         << "ix=" << ix << "_"
-        << "re=" << std::setprecision(24) << f.re() << "_"
-        << "im=" << std::setprecision(24) << f.im() << "_"
-        << "scale=" << std::setprecision(24) << f.scale();
+        << "re=" << std::setprecision(8) << f.re() << "_"
+        << "im=" << std::setprecision(8) << f.im() << "_"
+        << "scale=" << std::setprecision(8) << f.scale();
 
     auto do_callback = [&](bool complete, bool render) {
         image i(f.image_width(), f.image_height(), f.image());
-        return callback(complete, render, i, suffix.str(), ix);
+        return callback(complete, render, i, suffix.str().substr(0, 32), ix);
     };
 
     timer gen_timer;
@@ -729,13 +730,13 @@ template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::v
     std::stringstream suffix;
     suffix << std::setfill('0')
         << "ix=" << ix << "_"
-        << "re=" << std::setprecision(24) << f.re() << "_"
-        << "im=" << std::setprecision(24) << f.im() << "_"
-        << "scale=" << std::setprecision(24) << f.scale();
+        << "re=" << std::setprecision(8) << f.re() << "_"
+        << "im=" << std::setprecision(8) << f.im() << "_"
+        << "scale=" << std::setprecision(8) << f.scale();
 
     auto do_callback = [&](bool complete, bool render) {
         image i(f.image_width(), f.image_height(), f.image());
-        return callback(complete, render, i, suffix.str(), ix);
+        return callback(complete, render, i, suffix.str().substr(0, 32), ix);
     };
 
     timer gen_timer;

@@ -95,35 +95,41 @@ public:
     }
 
     inline __host__ __device__ double get_double() const {
+        fixed_point<I, F> t(*this);
+        bool negative = t.negative();
+        if (negative) {
+            t.negate();
+        }
+
         uint64_t exponent = 1023;
         uint64_t fraction = 0;
-        int64_t integer = get_integer();
+        int64_t integer = t.get_integer();
 
         if (F == 1) {
-            fraction = static_cast<const uint64_t>(*reinterpret_cast<const uint32_t *>(&data[F - 1]));
+            fraction = static_cast<const uint64_t>(*reinterpret_cast<const uint32_t *>(&t.data[F - 1]));
         }
         else if (F == 2) {
-            fraction = static_cast<uint64_t>(data[F - 2]) | (static_cast<uint64_t>(data[F - 1]) << 32);
+            fraction = *reinterpret_cast<const uint64_t *>(&t.data[F - 2]);
             if ((integer == 0) && ((fraction & 0xfff0000000000000) == 0)) {
                 fraction <<= 12;
                 exponent -= 12;
             }
         }
         else {
-            fraction = static_cast<uint64_t>(data[F - 2]) | (static_cast<uint64_t>(data[F - 1]) << 32);
+            fraction = *reinterpret_cast<const uint64_t *>(&t.data[F - 2]);
             if ((integer == 0) && ((fraction & 0xfff0000000000000) == 0)) {
                 fraction = 0;
                 for (int32_t i = F - 1; i >= 0; --i) {
-                    uint64_t v = data[i];
+                    uint64_t v = t.data[i];
                     if (v != 0) {
                         for (int32_t j = 31; j >= 0; --j) {
                             if (v & (1ULL << j)) {
                                 v <<= (32 + 31 - j);
                                 fraction |= v;
-                                v = ((i - 1) >= 0) ? data[i - 1] : 0;
+                                v = ((i - 1) >= 0) ? t.data[i - 1] : 0;
                                 v <<= (31 - j);
                                 fraction |= v;
-                                v = ((i - 2) >= 0) ? data[i - 2] : 0;
+                                v = ((i - 2) >= 0) ? t.data[i - 2] : 0;
                                 v >>= j + 1;
                                 fraction |= v;
                                 exponent -= (32 * (F - 1 - i) + (31 - j));
@@ -141,7 +147,11 @@ public:
         *reinterpret_cast<uint64_t *>(&delta) = ((exponent & 0x7ff) << 52);
         *reinterpret_cast<uint64_t *>(&value) = ((exponent & 0x7ff) << 52) | (fraction >> 12);
 
-        return static_cast<double>(get_integer()) + value - delta;
+        value = static_cast<double>(integer) + value - delta;
+        if (negative) {
+            value *= -1.0;
+        }
+        return value;
     }
 
     inline __host__ __device__ uint64_t get_fractional() const {
