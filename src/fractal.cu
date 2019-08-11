@@ -57,9 +57,7 @@ template<uint32_t I, uint32_t F> __global__ void kernel_iterate_perturbation(ker
 template<uint32_t I, uint32_t F> __global__ void kernel_iterate_perturbation_reference(kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks, kernel_params<fixed_point<I, F>> *params);
 
 template<typename S, typename T> __global__ void kernel_colour(S *chunks, kernel_params<T> *params, uint32_t *block_image);
-
-template<typename T>
-__global__ void kernel_reduce(kernel_chunk<T> *chunks, kernel_params<T> *params, uint32_t chunk_count);
+template<typename S, typename T> __global__ void kernel_reduce(S *chunks, kernel_params<T> *params, uint32_t chunk_count);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -292,7 +290,7 @@ bool fractal<T>::dev_perturbation_get_ref(kernel_params<T> &params, bool interac
         }
 
         for (uint32_t x = 0; x < 8; ++x) {
-            kernel_iterate_perturbation_reference << <grid_resY, grid_resX >> > (chunk_reference_buffer_device_, params_device);
+            kernel_iterate_perturbation_reference<<<grid_resY, grid_resX>>>(chunk_reference_buffer_device_, params_device);
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                 std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_iterate_perturbation_reference ]: " << cudaError << std::endl;
                 break;
@@ -345,6 +343,12 @@ bool fractal<T>::dev_perturbation(kernel_params<T> &params, bool interactive, st
         return false;
     }
 
+    kernel_reduce_params *reduce_device{ nullptr };
+    cudaMalloc(&reduce_device, cuda_threads_ * sizeof(kernel_reduce_params));
+    if (reduce_device == nullptr) {
+        return false;
+    }
+
     kernel_chunk_perturbation_reference<T> *chunk_reference_buffer_device_{ nullptr };
     cudaMalloc(&chunk_reference_buffer_device_, sizeof(kernel_chunk_perturbation_reference<T>));
     if (chunk_reference_buffer_device_ == nullptr) {
@@ -375,6 +379,9 @@ bool fractal<T>::dev_perturbation(kernel_params<T> &params, bool interactive, st
         uint32_t chunk_offset = chunk_i * cuda_groups_ * cuda_threads_;
         uint32_t chunk_size = std::min((params.image_width_ * params.image_height_) - chunk_offset, cuda_groups_ * cuda_threads_);
         uint32_t chunk_cuda_groups = chunk_size / cuda_threads_;
+
+        params.escape_range_min_ = 0xffffffffffffffff;
+        params.escape_range_max_ = 0;
 
         for (uint64_t escape_i = 0; escape_i < escape_count; ++escape_i) {
             std::cout << "                                \r    [+] Chunk: " << chunk_i + 1 << " / "
@@ -428,6 +435,41 @@ bool fractal<T>::dev_perturbation(kernel_params<T> &params, bool interactive, st
             }
 
             if (escape_i == escape_count - 1) {
+                if ((cudaError = cudaMemset(reduce_device, 0, sizeof(kernel_reduce_params) * cuda_threads_)) != cudaSuccess) {
+                    std::cout << std::endl << "[!] ERROR: cudaMemset(): " << cudaError << std::endl;
+                    break;
+                }
+
+                kernel_reduce<<<1, static_cast<uint32_t>(cuda_threads_)>>>(chunk_buffer_device_, params_device, reduce_device, static_cast<uint32_t>(chunk_cuda_groups));
+
+                if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
+                    std::cout << std::endl << "[!] ERROR: cudaDeviceSynchronize() [ kernel_reduce ]: " << cudaError << std::endl;
+                    break;
+                }
+
+                kernel_reduce_params reduce{ 0 };
+                if ((cudaError = cudaMemcpy(&reduce,
+                    reduce_device,
+                    sizeof(kernel_reduce_params),
+                    cudaMemcpyDeviceToHost)) != cudaSuccess) {
+                    std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyDeviceToHost): " << cudaError << std::endl;
+                    break;
+                }
+
+                if (reduce.escape_reduce_min_ < params.escape_range_min_) {
+                    params.escape_range_min_ = reduce.escape_reduce_min_;
+                }
+                if (reduce.escape_reduce_max_ > params.escape_range_max_) {
+                    params.escape_range_max_ = reduce.escape_reduce_max_;
+                }
+
+                std::cout << "[+] Range: " << params.escape_range_min_ << " - " << params.escape_range_max_ << std::endl;
+
+                if ((cudaError = cudaMemcpy(params_device, &params, sizeof(params), cudaMemcpyHostToDevice)) != cudaSuccess) {
+                    std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyHostToDevice): " << cudaError << std::endl;
+                    break;
+                }
+
                 if ((cudaError = cudaMemset(image_device_, 0, cuda_groups_ * cuda_threads_ * sizeof(uint32_t))) != cudaSuccess) {
                     std::cout << std::endl << "[!] ERROR: cudaMemset(): " << cudaError << std::endl;
                     break;
@@ -452,6 +494,7 @@ bool fractal<T>::dev_perturbation(kernel_params<T> &params, bool interactive, st
 
     cudaFree(params.palette_);
     cudaFree(params_device);
+    cudaFree(reduce_device);
 
     std::cout << std::endl;
     return cudaError == cudaSuccess;
@@ -1123,64 +1166,64 @@ __global__ void kernel_colour(S *chunks, kernel_params<T> *params, uint32_t *ima
         double mu = 1.0 + escape - log2(0.5 * log(abs) / log(default_escape_radius));
         if (mu < 1.0) mu = 1.0;
 
-        switch (13/*params->colour_method_*/) {
+        switch (params->colour_method_) {
         default:
-        case 0:
-        case 1:
-            hue = 0.0;
-            sat = 0.95;
-            val = 1.0;
-            break;
+        //case 0:
+        //case 1:
+        //    hue = 0.0;
+        //    sat = 0.95;
+        //    val = 1.0;
+        //    break;
 
-        case 2:
-        case 3:
-            {
-                double t = log(mu) / log(escape_max);
-                hue = 0.0;
-                sat = 0.0;
-                val = 0.0;
-                for (uint32_t i = 0; i < params->palette_count_; ++i) {
-                    double poly = pow(t, static_cast<double>(i)) * pow(1.0 - t, static_cast<double>(params->palette_count_ - 1 - i));
-                    hue += params->palette_[3 * i + 0] * poly;
-                    sat += params->palette_[3 * i + 1] * poly;
-                    val += params->palette_[3 * i + 2] * poly;
-                }
-                hue *= 360.0;
-            }
-            break;
+        //case 2:
+        //case 3:
+        //    {
+        //        double t = log(mu) / log(escape_max);
+        //        hue = 0.0;
+        //        sat = 0.0;
+        //        val = 0.0;
+        //        for (uint32_t i = 0; i < params->palette_count_; ++i) {
+        //            double poly = pow(t, static_cast<double>(i)) * pow(1.0 - t, static_cast<double>(params->palette_count_ - 1 - i));
+        //            hue += params->palette_[3 * i + 0] * poly;
+        //            sat += params->palette_[3 * i + 1] * poly;
+        //            val += params->palette_[3 * i + 2] * poly;
+        //        }
+        //        hue *= 360.0;
+        //    }
+        //    break;
 
-        case 4:
-        case 5:
-        case 6:
-        case 7:
-            {
-                if (mu < 2.71828182846) {
-                    mu = 2.71828182846;
-                }
+        //case 4:
+        //case 5:
+        //case 6:
+        //case 7:
+        //    {
+        //        if (mu < 2.71828182846) {
+        //            mu = 2.71828182846;
+        //        }
 
-                double t = log(escape_max) / log(1.0 + mu);
-                if (params->colour_method_ < 6) {
-                    t = fmod(t, 2.0);
-                    if (t > 1.0) {
-                        t = 2.0 - t;
-                    }
-                }
-                else {
-                    t = fabs(sin(t));
-                }
+        //        double t = log(escape_max) / log(1.0 + mu);
+        //        if (params->colour_method_ < 6) {
+        //            t = fmod(t, 2.0);
+        //            if (t > 1.0) {
+        //                t = 2.0 - t;
+        //            }
+        //        }
+        //        else {
+        //            t = fabs(sin(t));
+        //        }
 
-                hue = 0.0;
-                sat = 0.0;
-                val = 0.0;
-                for (uint32_t i = 0; i < params->palette_count_; ++i) {
-                    double poly = pow(t, static_cast<double>(i)) * pow(1.0 - t, static_cast<double>(params->palette_count_ - 1 - i));
-                    hue += params->palette_[3 * i + 0] * poly;
-                    sat += params->palette_[3 * i + 1] * poly;
-                    val += params->palette_[3 * i + 2] * poly;
-                }
-                hue *= 360.0;
-            }
-            break;
+        //        hue = 0.0;
+        //        sat = 0.0;
+        //        val = 0.0;
+        //        for (uint32_t i = 0; i < params->palette_count_; ++i) {
+        //            double poly = pow(t, static_cast<double>(i)) * pow(1.0 - t, static_cast<double>(params->palette_count_ - 1 - i));
+        //            hue += params->palette_[3 * i + 0] * poly;
+        //            sat += params->palette_[3 * i + 1] * poly;
+        //            val += params->palette_[3 * i + 2] * poly;
+        //        }
+        //        hue *= 360.0;
+        //    }
+        //    break;
 
         case 8:
         case 9:
@@ -1189,32 +1232,32 @@ __global__ void kernel_colour(S *chunks, kernel_params<T> *params, uint32_t *ima
             val = 1.0;
             break;
 
-        case 10:
-        case 11:
-        case 12:
-        case 13:
-        case 14:
-        case 15:
-            if (mu < 2.71828182846) {
-                mu = 2.71828182846;
-            }
-            hue = log(escape_max) / log(1.0 + mu);
-            if (params->colour_method_ <= 11) {
+        //case 10:
+        //case 11:
+        //case 12:
+        //case 13:
+        //case 14:
+        //case 15:
+        //    if (mu < 2.71828182846) {
+        //        mu = 2.71828182846;
+        //    }
+        //    hue = log(escape_max) / log(1.0 + mu);
+        //    if (params->colour_method_ <= 11) {
 
-            }
-            else if (params->colour_method_ <= 13) {
-                hue = fmod(hue, 2.0);
-                if (hue > 1.0) {
-                    hue = 2.0 - hue;
-                }
-            }
-            else {
-                hue = fabs(sin(hue));
-            }
-            hue *= 360;
-            sat = 0.95;
-            val = 1.0;
-            break;
+        //    }
+        //    else if (params->colour_method_ <= 13) {
+        //        hue = fmod(hue, 2.0);
+        //        if (hue > 1.0) {
+        //            hue = 2.0 - hue;
+        //        }
+        //    }
+        //    else {
+        //        hue = fabs(sin(hue));
+        //    }
+        //    hue *= 360;
+        //    sat = 0.95;
+        //    val = 1.0;
+        //    break;
         }
 
         if (params->colour_method_ % 2 == 1) {
@@ -1265,8 +1308,8 @@ __global__ void kernel_colour(S *chunks, kernel_params<T> *params, uint32_t *ima
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename T>
-__global__ void kernel_reduce(kernel_chunk<T> *chunks, kernel_params<T> *params, kernel_reduce_params *reduce_params, uint32_t chunk_count) {
+template<typename S, typename T>
+__global__ void kernel_reduce(S *chunks, kernel_params<T> *params, kernel_reduce_params *reduce_params, uint32_t chunk_count) {
     kernel_reduce_params *reduce = &reduce_params[threadIdx.x];
 
     uint64_t escape_reduce = 0;
@@ -1274,7 +1317,7 @@ __global__ void kernel_reduce(kernel_chunk<T> *chunks, kernel_params<T> *params,
     uint64_t escape_reduce_max = 0;
 
     for (uint32_t i = 0; i < chunk_count; ++i) {
-        kernel_chunk<T> *c = &chunks[threadIdx.x + i * blockDim.x];
+        S *c = &chunks[threadIdx.x + i * blockDim.x];
         if (c->escape_ < params->escape_limit_) {
             escape_reduce++;
         }
