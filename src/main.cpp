@@ -1,4 +1,9 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Fractal Generator
+// (C)2018-19 Liam Kirton <liam@int3.ws>
+//
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <windows.h>
 
@@ -42,9 +47,10 @@ constexpr uint32_t T_F = 32;
 
 struct run_state {
     run_state() : count(1), skip(0), julia(false),
+        perturbation(false), grid_x(32), grid_y(32), grid_levels(4), grid_steps(4),
         image_width(1024), image_height(768),
         cuda_groups(default_cuda_groups), cuda_threads(default_cuda_threads),
-        trial(true), colour_method(2), escape_limit(default_escape_limit), escape_block(default_escape_block) {}
+        colour_method(2), escape_limit(default_escape_limit), escape_block(default_escape_block) {}
 
     YAML::Node run_config;
 
@@ -56,6 +62,12 @@ struct run_state {
     fixed_point<T_I, T_F> scale;
     fixed_point<T_I, T_F> scale_factor;
     fixed_point<T_I, T_F> step;
+
+    bool perturbation; 
+    uint32_t grid_x;
+    uint32_t grid_y;
+    uint32_t grid_levels;
+    uint32_t grid_steps;
 
     bool julia;
     fixed_point<T_I, T_F> re_c;
@@ -71,7 +83,6 @@ struct run_state {
     bool oversample;
     uint32_t oversample_multiplier;
 
-    bool trial;
     uint32_t colour_method;
 
     uint32_t escape_limit;
@@ -86,15 +97,15 @@ void create_run_state(run_state &r, YAML::Node &run_config);
 bool run(run_state &r);
 bool run_interactive(run_state &r);
 
-bool run_generate(run_state &r, std::function<bool(bool, bool, image &, std::string &, uint32_t)> callback);
-template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, bool, image &, std::string &, uint32_t)> callback);
-template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, bool, image &, std::string &, uint32_t)> callback);
+bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &, uint32_t)> callback);
+template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback);
+template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback);
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[]) {
     std::cout << std::endl
-        << "CUDA Fractal Generator" << std::endl
+        << "Fractal" << std::endl
         << "(C)2018-19 Liam Kirton <liam@int3.ws>" << std::endl
         << std::endl;
 
@@ -231,6 +242,12 @@ void create_run_state(run_state &r, YAML::Node &run_config) {
         r.im_c.set(run_config["im_c"].as<std::string>());
     }
 
+    r.perturbation = r.run_config["perturbation"].as<bool>();
+    r.grid_x = r.run_config["grid_x"].as<uint32_t>();
+    r.grid_y = r.run_config["grid_y"].as<uint32_t>();
+    r.grid_levels = r.run_config["grid_levels"].as<uint32_t>(); 
+    r.grid_steps = r.run_config["grid_steps"].as<uint32_t>();
+
     r.image_width = run_config["image_width"].as<uint32_t>();
     r.image_height = run_config["image_height"].as<uint32_t>();
 
@@ -252,15 +269,13 @@ void create_run_state(run_state &r, YAML::Node &run_config) {
     r.interactive = r.run_config["interactive"].as<bool>();
     r.oversample = r.run_config["oversample"].as<bool>();
     r.oversample_multiplier = r.run_config["oversample_multiplier"].as<uint32_t>();
-
-    r.trial = r.run_config["trial"].as<bool>();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool run(run_state &r) {
     std::unique_ptr<png_writer> png(new png_writer(r.run_config));
-    return run_generate(r, [&png](bool complete, bool render, image &i, std::string &suffix, uint32_t ix) {
+    return run_generate(r, [&png](bool complete, image &i, std::string &suffix, uint32_t ix) {
         if (complete) {
             png->write(i, suffix, ix);
         }
@@ -331,18 +346,16 @@ bool run_interactive(run_state &r) {
             r.count = count >= 1 ? count : 1;
             r.skip = skip >= 0 ? skip : 0;
 
-            run_generate(r, [&](bool complete, bool render, image &i, std::string &suffix, uint32_t ix) {
-                if (render) {
-                    const uint32_t *src_buffer = i.image_buffer();
-                    uint32_t *render_buffer = new uint32_t[i.image_width() * i.image_height()];
-                    memcpy(render_buffer, i.image_buffer(), i.image_width() * i.image_height() * sizeof(uint32_t));
-                    {
-                        std::lock_guard<std::mutex> lock(mutex_render);
-                        queue_render.push(std::make_tuple(i.image_width(), i.image_height(), render_buffer));
-                    }
-                    if (complete && save_png) {
-                        png->write(i, suffix, ix);
-                    }
+            run_generate(r, [&](bool complete, image &i, std::string &suffix, uint32_t ix) {
+                const uint32_t *src_buffer = i.image_buffer();
+                uint32_t *render_buffer = new uint32_t[i.image_width() * i.image_height()];
+                memcpy(render_buffer, i.image_buffer(), i.image_width() * i.image_height() * sizeof(uint32_t));
+                {
+                    std::lock_guard<std::mutex> lock(mutex_render);
+                    queue_render.push(std::make_tuple(i.image_width(), i.image_height(), render_buffer));
+                }
+                if (complete && save_png) {
+                    png->write(i, suffix, ix);
                 }
                 return queue_generate.empty() && (hWnd != nullptr);
             });
@@ -567,7 +580,7 @@ bool run_interactive(run_state &r) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool run_generate(run_state &r, std::function<bool(bool, bool, image &, std::string &, uint32_t)> callback) {
+bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
     std::vector<std::tuple<double, double, double>> palette = create_palette(r);
 
     fixed_point<T_I, T_F> scale(r.scale);
@@ -582,10 +595,10 @@ bool run_generate(run_state &r, std::function<bool(bool, bool, image &, std::str
             std::cout << "[+] Generating Fractal #" << i << std::endl
                 << "  [+] Precison Bit: " << precision_bit;
 
-            /*if (precision_bit < 53) {
+            if (precision_bit < 53) {
                 run_step<0, 0>(r, i, palette, callback);
             }
-            else */if (precision_bit < 32 * 2) {
+            else if (precision_bit < 32 * 2) {
                 run_step<1, 2>(r, i, palette, callback);
             }
             else if (precision_bit < 32 * 3) {
@@ -635,7 +648,7 @@ bool run_generate(run_state &r, std::function<bool(bool, bool, image &, std::str
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, bool, image &, std::string &, uint32_t)> callback) {
+template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
     fractal<double> f(r.image_width, r.image_height);
     if (r.oversample) {
         f.resize(r.image_width * r.oversample_multiplier, r.image_height * r.oversample_multiplier);
@@ -657,7 +670,7 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
     for (uint32_t i = 0; i < ix; ++i) {
         scale *= scale_factor;
     }
-    f.specify(re, im, scale);
+    f.specify(re, im, scale, false);
 
     if (r.julia) {
         double re_c = std::stod(r.re_c);
@@ -676,16 +689,16 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
         << "im=" << std::setprecision(8) << f.im() << "_"
         << "scale=" << std::setprecision(8) << f.scale();
 
-    auto do_callback = [&](bool complete, bool render) {
+    auto do_callback = [&](bool complete) {
         image i(f.image_width(), f.image_height(), f.image());
-        return callback(complete, render, i, suffix.str().substr(0, 32), ix);
+        return callback(complete, i, suffix.str().substr(0, 32), ix);
     };
 
     timer gen_timer;
-    if (f.generate(r.trial, r.interactive, [&](bool render) { return do_callback(false, render); })) {
+    if (f.generate([&]() { return do_callback(false); })) {
         gen_timer.stop();
         gen_timer.print();
-        do_callback(true, true);
+        do_callback(true);
     }
 
     return true;
@@ -693,7 +706,7 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, bool, image &, std::string &, uint32_t)> callback) {
+template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
     fractal<fixed_point<I, F>> f(r.image_width, r.image_height);
     if (r.oversample) {
         f.resize(r.image_width * r.oversample_multiplier, r.image_height * r.oversample_multiplier);
@@ -715,7 +728,11 @@ template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::v
     for (uint32_t i = 0; i < ix; ++i) {
         scale.multiply(scale_factor);
     }
-    f.specify(re, im, scale);
+
+    f.specify(re, im, scale, r.perturbation);
+    if (r.perturbation) {
+        f.grid(r.grid_x, r.grid_y, r.grid_levels, r.grid_steps);
+    }
 
     if (r.julia) {
         fixed_point<I, F> re_c(r.re_c);
@@ -734,16 +751,16 @@ template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::v
         << "im=" << std::setprecision(8) << f.im() << "_"
         << "scale=" << std::setprecision(8) << f.scale();
 
-    auto do_callback = [&](bool complete, bool render) {
+    auto do_callback = [&](bool complete) {
         image i(f.image_width(), f.image_height(), f.image());
-        return callback(complete, render, i, suffix.str().substr(0, 32), ix);
+        return callback(complete, i, suffix.str().substr(0, 32), ix);
     };
 
     timer gen_timer;
-    if (f.generate(r.trial, r.interactive, [&](bool render) { return do_callback(false, render); })) {
+    if (f.generate([&]() { return do_callback(false); })) {
         gen_timer.stop();
         gen_timer.print();
-        do_callback(true, true);
+        do_callback(true);
     }
 
     return true;

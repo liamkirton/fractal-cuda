@@ -1,4 +1,9 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Fractal
+// (C)2018-19 Liam Kirton <liam@int3.ws>
+//
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #pragma once
 
@@ -15,25 +20,6 @@ struct kernel_chunk {
     T im_c_;
     T re_;
     T im_;
-};
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<typename T>
-struct kernel_chunk_perturbation_reference {
-    uint64_t escape_;
-    uint64_t index_;
-    T re_c_;
-    T im_c_;
-    T re_;
-    T im_;
-#ifdef _DEBUG
-    double re_d_[256];
-    double im_d_[256];
-#else
-    double re_d_[2048];
-    double im_d_[2048];
-#endif
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -55,6 +41,31 @@ struct kernel_chunk_perturbation {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef _DEBUG
+constexpr uint64_t kernel_chunk_perturbation_reference_block = 256;
+#else
+constexpr uint64_t kernel_chunk_perturbation_reference_block = 2048;
+#endif
+
+template<typename T>
+struct kernel_chunk_perturbation_reference {
+    uint64_t escape_;
+    uint64_t index_;
+    T re_c_;
+    T im_c_;
+    T re_;
+    T im_;
+#ifdef _DEBUG
+    double re_d_[kernel_chunk_perturbation_reference_block];
+    double im_d_[kernel_chunk_perturbation_reference_block];
+#else
+    double re_d_[kernel_chunk_perturbation_reference_block];
+    double im_d_[kernel_chunk_perturbation_reference_block];
+#endif
+};
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 template<typename T>
 struct kernel_params {
     kernel_params(const uint32_t &image_width,
@@ -66,14 +77,18 @@ struct kernel_params {
             const T &im,
             const T &scale,
             const T &re_c,
-            const T &im_c) :
+            const T &im_c,
+            const uint32_t grid_x,
+            const uint32_t grid_y) :
                 image_width_(image_width), image_height_(image_height),
                 escape_block_(escape_block), escape_limit_(escape_limit), colour_method_(colour_method),
                 escape_i_(0), escape_range_min_(0), escape_range_max_(escape_limit),
                 chunk_offset_(0),
                 re_(re), im_(im), scale_(scale), re_c_(re_c), im_c_(im_c),
+                grid_x_(grid_x), grid_y_(grid_y),
                 have_ref_(false), re_ref_(0), im_ref_(0),
-                set_hue_(0.0), set_sat_(0.0), set_val_(0.0), palette_(nullptr), palette_count_(0) {};
+                set_hue_(0.0), set_sat_(0.0), set_val_(0.0), palette_device_(nullptr), palette_count_(0) {};
+
     uint32_t image_width_;
     uint32_t image_height_;
 
@@ -92,6 +107,9 @@ struct kernel_params {
     T re_c_;
     T im_c_;
 
+    uint32_t grid_x_;
+    uint32_t grid_y_;
+
     bool have_ref_;
     T re_ref_;
     T im_ref_;
@@ -100,7 +118,7 @@ struct kernel_params {
     double set_sat_;
     double set_val_;
 
-    double *palette_;
+    double *palette_device_;
     uint32_t palette_count_;
 };
 
@@ -158,15 +176,15 @@ public:
     }
 
     fractal(const uint32_t image_width, const uint32_t image_height, uint64_t escape_block, uint64_t escape_limit, uint32_t cuda_groups, uint32_t cuda_threads) :
-            chunk_buffer_(nullptr), chunk_buffer_device_(nullptr), image_(nullptr), image_device_(nullptr),
+            image_(nullptr),
             image_width_(image_width), image_height_(image_height),
-            trial_image_width_(cuda_threads), trial_image_height_(cuda_groups),
             cuda_groups_(cuda_groups), cuda_threads_(cuda_threads),
             escape_block_(escape_block), escape_limit_(escape_limit),
             colour_method_(0),
+            perturbation_(false), grid_x_(32), grid_y_(32), grid_levels_(1), grid_steps_(1),
             julia_(false), re_c_(0), im_c_(0) {
         initialise();
-        specify(0.0, 0.0, 1.0);
+        specify(0.0, 0.0, 1.0, false);
     }
 
     ~fractal() {
@@ -177,15 +195,16 @@ public:
         return initialise(cuda_groups_, cuda_threads_);
     }
 
-    bool initialise(uint32_t cuda_groups, uint32_t cuda_threads);
+    bool initialise(const uint32_t cuda_groups, const uint32_t cuda_threads);
     void uninitialise();
 
-    void limits(uint64_t escape_limit, uint64_t escape_block = default_escape_block) {
-        if (escape_block > escape_limit) {
-            escape_block = escape_limit;
-        }
+    void limits(const uint64_t escape_limit, const uint64_t escape_block = default_escape_block) {
         escape_block_ = escape_block;
         escape_limit_ = escape_limit;
+
+        if (escape_block_ > escape_limit_) {
+            escape_block_ = escape_limit_;
+        }
     }
 
     void colour(const uint8_t method, std::vector<std::tuple<double, double, double>> &palette) {
@@ -193,11 +212,18 @@ public:
         palette_ = palette;
     }
 
+    void grid(const uint32_t x, const uint32_t y, const uint32_t levels, const uint32_t steps) {
+        grid_x_ = x;
+        grid_y_ = y;
+        grid_levels_ = levels;
+        grid_steps_ = steps;
+    }
+
     void resize(const uint32_t image_width, const uint32_t image_height);
-    void specify(const T &re, const T &im, const T &scale);
+    void specify(const T &re, const T &im, const T &scale, bool perturbation);
     void specify_julia(const T &re_c, const T &im_c);
 
-    bool generate(bool trial, bool interactive, std::function<bool(bool)> callback = []() {});
+    bool generate(std::function<bool()> callback = []() {});
 
     uint32_t image_width() {
         return image_width_;
@@ -228,11 +254,10 @@ public:
     }
 
 private:
-    bool dev_perturbation(kernel_params<T> &params, bool interactive, std::function<bool(bool)> callback);
-    bool dev_perturbation_get_ref(kernel_params<T> &params, bool interactive, std::function<bool(bool)> callback);
-    bool generate(kernel_params<T> &params, bool interactive, std::function<bool(bool)> callback);
+    bool generate(kernel_params<T> &params, std::function<bool()> callback);
+    bool generate_perturbation_reference(kernel_params<T> &params, std::function<bool()> callback);
+
     void pixel_to_coord(uint32_t x, uint32_t image_width, T &re, uint32_t y, uint32_t image_height, T &im);
-    bool process_trial(kernel_params<T> &params_trial, kernel_params<T> &params, kernel_chunk<T> *preview);
 
 private:
     uint32_t cuda_groups_;
@@ -242,8 +267,6 @@ private:
 
     uint32_t image_width_;
     uint32_t image_height_;
-    uint32_t trial_image_width_;
-    uint32_t trial_image_height_;
 
     uint8_t colour_method_;
     std::vector<std::tuple<double, double, double>> palette_;
@@ -252,15 +275,17 @@ private:
     T im_;
     T scale_;
 
+    bool perturbation_;
+    uint32_t grid_x_;
+    uint32_t grid_y_;
+    uint32_t grid_levels_;
+    uint32_t grid_steps_;
+
     bool julia_;
     T re_c_;
     T im_c_;
 
-    kernel_chunk<T> *chunk_buffer_;
-    kernel_chunk<T> *chunk_buffer_device_;
-
     uint32_t *image_;
-    uint32_t *image_device_; 
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

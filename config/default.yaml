@@ -42,6 +42,12 @@ im_c: ""
 scale: 1.0
 scale_factor: 0.75
 
+perturbation: false
+grid_x: 32
+grid_y: 32
+grid_levels: 1
+grid_steps: 1
+
 ###
 # Image
 ###
