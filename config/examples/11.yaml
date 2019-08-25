@@ -4,4 +4,4 @@ scale: 7.07106781186545e-95
 
 cuda_groups: 128
 cuda_threads: 256
-escape_block: 2048
+escape_block: 32768

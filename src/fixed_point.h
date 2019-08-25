@@ -121,7 +121,7 @@ public:
             }
         }
         else {
-            fraction = (static_cast<uint64_t>(t.data[F - 2]) << 32) | t.data[F - 3];
+            fraction = (static_cast<uint64_t>(t.data[F - 1]) << 32) | t.data[F - 2];
             if ((integer == 0) && ((fraction & 0xfff0000000000000) == 0)) {
                 fraction = 0;
                 for (int32_t i = F - 1; i >= 0; --i) {

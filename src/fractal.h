@@ -12,6 +12,42 @@
 #include "fixed_point.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Constants
+//
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+constexpr double kImMin = 3.0;
+constexpr double kImMax = -3.0;
+constexpr double kReMin = -3.0;
+constexpr double kReMax = 3.0;
+
+#ifdef _DEBUG
+constexpr uint32_t kDefaultCudaGroups = 128;
+constexpr uint32_t kDefaultCudaThreads = 128;
+constexpr uint32_t kDefaultEscapeBlock = 1024;
+constexpr uint32_t kDefaultEscapeLimit = 2048;
+constexpr uint32_t kDefaultImageWidth = 320;
+constexpr uint32_t kDefaultImageHeight = 320;
+constexpr size_t kKernelChunkPerturbationReferenceBlock = 256;
+#else
+constexpr uint32_t kDefaultCudaGroups = 256;
+constexpr uint32_t kDefaultCudaThreads = 1024;
+constexpr uint32_t kDefaultEscapeBlock = 65536;
+constexpr uint32_t kDefaultEscapeLimit = 1048576;
+constexpr uint32_t kDefaultImageWidth = 1024;
+constexpr uint32_t kDefaultImageHeight = 768;
+constexpr size_t kKernelChunkPerturbationReferenceBlock = 4096;
+#endif
+
+constexpr double kDefaultEscapeRadius = 16.0;
+constexpr double kDefaultEscapeRadiusSquared = kDefaultEscapeRadius * kDefaultEscapeRadius;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Structs
+//
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
 struct kernel_chunk {
@@ -41,12 +77,6 @@ struct kernel_chunk_perturbation {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#ifdef _DEBUG
-constexpr uint64_t kernel_chunk_perturbation_reference_block = 256;
-#else
-constexpr uint64_t kernel_chunk_perturbation_reference_block = 2048;
-#endif
-
 template<typename T>
 struct kernel_chunk_perturbation_reference {
     uint64_t escape_;
@@ -56,11 +86,11 @@ struct kernel_chunk_perturbation_reference {
     T re_;
     T im_;
 #ifdef _DEBUG
-    double re_d_[kernel_chunk_perturbation_reference_block];
-    double im_d_[kernel_chunk_perturbation_reference_block];
+    double re_d_[kKernelChunkPerturbationReferenceBlock];
+    double im_d_[kKernelChunkPerturbationReferenceBlock];
 #else
-    double re_d_[kernel_chunk_perturbation_reference_block];
-    double im_d_[kernel_chunk_perturbation_reference_block];
+    double re_d_[kKernelChunkPerturbationReferenceBlock];
+    double im_d_[kKernelChunkPerturbationReferenceBlock];
 #endif
 };
 
@@ -131,51 +161,29 @@ struct kernel_reduce_params {
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-constexpr double im_min = 3.0;
-constexpr double im_max = -3.0;
-constexpr double re_min = -3.0;
-constexpr double re_max = 3.0;
-
-#ifdef _DEBUG
-    constexpr uint32_t default_cuda_groups = 128;
-    constexpr uint32_t default_cuda_threads = 128;
-
-    constexpr uint32_t default_escape_block = 1024;
-    constexpr uint32_t default_escape_limit = 2048;
-    constexpr double default_escape_radius = 16.0;
-
-    constexpr uint32_t default_image_width = 320;
-    constexpr uint32_t default_image_height = 320;
-#else
-    constexpr uint32_t default_cuda_groups = 256;
-    constexpr uint32_t default_cuda_threads = 1024;
-
-    constexpr uint32_t default_escape_block = 65536;
-    constexpr uint32_t default_escape_limit = 1048576;
-    constexpr double default_escape_radius = 16.0;
-
-    constexpr uint32_t default_image_width = 1024;
-    constexpr uint32_t default_image_height = 768;
-#endif
-
-constexpr double default_escape_radius_square = default_escape_radius * default_escape_radius;
-
+//
+// Fractal Class
+//
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
 class fractal {
 public:
-    fractal() : fractal(default_image_width, default_image_height, default_escape_block, default_escape_limit, default_cuda_groups, default_cuda_threads) {
+    fractal() : fractal(kDefaultImageWidth, kDefaultImageHeight,
+            kDefaultEscapeBlock, kDefaultEscapeLimit, kDefaultCudaGroups, kDefaultCudaThreads) {
     }
 
-    fractal(const uint32_t image_width, const uint32_t image_height) : fractal(image_width, image_height, default_escape_block, default_escape_limit, default_cuda_groups, default_cuda_threads) {
+    fractal(const uint32_t image_width, const uint32_t image_height) :
+            fractal(image_width, image_height, kDefaultEscapeBlock, kDefaultEscapeLimit,
+                kDefaultCudaGroups, kDefaultCudaThreads) {
     }
 
-    fractal(const uint32_t image_width, const uint32_t image_height, uint64_t escape_block, uint64_t escape_limit) : fractal(image_width, image_height, escape_block, escape_limit, default_cuda_groups, default_cuda_threads) {
+    fractal(const uint32_t image_width, const uint32_t image_height, uint64_t escape_block, uint64_t escape_limit) :
+            fractal(image_width, image_height, escape_block, escape_limit, kDefaultCudaGroups, kDefaultCudaThreads) {
     }
 
-    fractal(const uint32_t image_width, const uint32_t image_height, uint64_t escape_block, uint64_t escape_limit, uint32_t cuda_groups, uint32_t cuda_threads) :
+    fractal(const uint32_t image_width, const uint32_t image_height, uint64_t escape_block,
+                uint64_t escape_limit, uint32_t cuda_groups, uint32_t cuda_threads) :
             image_(nullptr),
             image_width_(image_width), image_height_(image_height),
             cuda_groups_(cuda_groups), cuda_threads_(cuda_threads),
@@ -198,12 +206,12 @@ public:
     bool initialise(const uint32_t cuda_groups, const uint32_t cuda_threads);
     void uninitialise();
 
-    void limits(const uint64_t escape_limit, const uint64_t escape_block = default_escape_block) {
+    void limits(const uint64_t escape_limit, const uint64_t escape_block = kDefaultEscapeBlock) {
         escape_block_ = escape_block;
         escape_limit_ = escape_limit;
 
-        if (escape_block_ > escape_limit_) {
-            escape_block_ = escape_limit_;
+        if (escape_block_ >= escape_limit_) {
+            escape_block_ = escape_limit_ / 2;
         }
     }
 

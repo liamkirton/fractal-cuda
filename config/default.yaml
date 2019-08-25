@@ -45,8 +45,8 @@ scale_factor: 0.75
 perturbation: false
 grid_x: 32
 grid_y: 32
-grid_levels: 1
-grid_steps: 1
+grid_levels: 2
+grid_steps: 2
 
 ###
 # Image
@@ -64,11 +64,6 @@ image_height: 768
 
 count: 1
 skip: 0
-
-follow_variance: false
-random: false
-reset: false
-trial: true
 
 interactive: false
 oversample: false

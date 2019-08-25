@@ -52,7 +52,7 @@ png_writer::png_writer(YAML::Node &run_config) {
         CreateDirectory(directory_.c_str(), nullptr);
     }
 
-    exit_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
+    exit_event_ = CreateEvent(nullptr, TRUE, FALSE, nullptr);
 
     for (uint32_t i = 0; i < 4; ++i) {
         threads_.push_back(std::thread([this]() {
@@ -102,7 +102,7 @@ void png_writer::write(std::tuple<uint64_t, uint64_t, const uint32_t *, std::str
     const uint32_t *src_buffer = std::get<2>(image);
     std::string suffix = std::get<3>(image);
 
-    png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
     png_infop info_ptr = png_create_info_struct(png_ptr);
 
     if (setjmp(png_jmpbuf(png_ptr))) {
@@ -178,7 +178,7 @@ void png_writer::write(std::tuple<uint64_t, uint64_t, const uint32_t *, std::str
     }
 
     delete[] row_buffer;
-    png_write_end(png_ptr, NULL);
+    png_write_end(png_ptr, nullptr);
     fclose(file);
 }
 

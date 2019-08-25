@@ -49,8 +49,8 @@ struct run_state {
     run_state() : count(1), skip(0), julia(false),
         perturbation(false), grid_x(32), grid_y(32), grid_levels(4), grid_steps(4),
         image_width(1024), image_height(768),
-        cuda_groups(default_cuda_groups), cuda_threads(default_cuda_threads),
-        colour_method(2), escape_limit(default_escape_limit), escape_block(default_escape_block) {}
+        cuda_groups(kDefaultCudaGroups), cuda_threads(kDefaultCudaThreads),
+        colour_method(2), escape_limit(kDefaultEscapeLimit), escape_block(kDefaultEscapeBlock) {}
 
     YAML::Node run_config;
 
@@ -251,8 +251,8 @@ void create_run_state(run_state &r, YAML::Node &run_config) {
     r.image_width = run_config["image_width"].as<uint32_t>();
     r.image_height = run_config["image_height"].as<uint32_t>();
 
-    double step_re = (re_max - re_min) / r.image_width;
-    double step_im = (im_max - im_min) / r.image_height;
+    double step_re = (kReMax - kReMin) / r.image_width;
+    double step_im = (kImMax - kImMin) / r.image_height;
     r.step.set((step_re > step_im) ? step_re : step_im);
 
     r.count = r.run_config["count"].as<uint32_t>();
@@ -286,7 +286,7 @@ bool run(run_state &r) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool run_interactive(run_state &r) {
-    HANDLE hExitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    HANDLE hExitEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
     HWND hWnd{ nullptr };
 
     std::mutex mutex_generate;
@@ -321,8 +321,8 @@ bool run_interactive(run_state &r) {
                 scale_c.multiply(r.scale_factor);
             }
 
-            r.re.set(re_min + std::get<2>(coords) * (re_max - re_min) / r.image_width);
-            r.im.set(im_max - std::get<3>(coords) * (im_max - im_min) / r.image_height);
+            r.re.set(kReMin + std::get<2>(coords) * (kReMax - kReMin) / r.image_width);
+            r.im.set(kImMax - std::get<3>(coords) * (kImMax - kImMin) / r.image_height);
             r.re.multiply(scale_c);
             r.im.multiply(scale_c);
             r.re.add(re_c);
@@ -412,7 +412,7 @@ bool run_interactive(run_state &r) {
 
             delete[] src_buffer;
 
-            InvalidateRect(hWnd, NULL, TRUE);
+            InvalidateRect(hWnd, nullptr, TRUE);
         }
     });
 
@@ -429,7 +429,7 @@ bool run_interactive(run_state &r) {
                 PAINTSTRUCT ps{ 0 };
                 HDC hDC = BeginPaint(hWnd, &ps);
                 HDC hMDC = CreateCompatibleDC(hDC);
-                if (hMDC != NULL) {
+                if (hMDC != nullptr) {
                     BITMAPINFO bi;
                     ZeroMemory(&bi, sizeof(BITMAPINFO));
                     bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -439,8 +439,8 @@ bool run_interactive(run_state &r) {
                     bi.bmiHeader.biBitCount = 32;
                     
                     uint32_t *lpBitmapBits{ nullptr };
-                    HBITMAP hBM = CreateDIBSection(hMDC, &bi, DIB_RGB_COLORS, reinterpret_cast<VOID**>(&lpBitmapBits), NULL, 0);
-                    if (hBM != NULL) {
+                    HBITMAP hBM = CreateDIBSection(hMDC, &bi, DIB_RGB_COLORS, reinterpret_cast<VOID**>(&lpBitmapBits), nullptr, 0);
+                    if (hBM != nullptr) {
                         memcpy(lpBitmapBits, image_buffer, sizeof(uint32_t) * r.image_width * r.image_height);
 
                         HGDIOBJ hPrev = SelectObject(hMDC, hBM);
@@ -517,8 +517,8 @@ bool run_interactive(run_state &r) {
     wc.cbSize = sizeof(wc);
     wc.cbClsExtra = 0; 
     wc.cbWndExtra = sizeof(size_t);
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW); 
-    wc.hInstance = GetModuleHandle(NULL);
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW); 
+    wc.hInstance = GetModuleHandle(nullptr);
     wc.lpszClassName = "fractal_interactive";
     wc.style = CS_HREDRAW | CS_VREDRAW;
 
@@ -542,12 +542,12 @@ bool run_interactive(run_state &r) {
         CW_USEDEFAULT,
         r.image_width,
         r.image_height,
-        NULL,
-        NULL,
+        nullptr,
+        nullptr,
         wc.hInstance,
         &wndproc);
 
-    if (hWnd == NULL) {
+    if (hWnd == nullptr) {
         std::cout << "[!] ERROR: CreateWindow() Failed - " << GetLastError() << std::endl;
         return false;
     }
@@ -556,7 +556,7 @@ bool run_interactive(run_state &r) {
     UpdateWindow(hWnd);
 
     MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0)) {
+    while (GetMessage(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
