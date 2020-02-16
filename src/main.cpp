@@ -1,7 +1,7 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Fractal Generator
-// (C)2018-19 Liam Kirton <liam@int3.ws>
+// (C)2018-20 Liam Kirton <liam@int3.ws>
 //
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -106,7 +107,7 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
 int main(int argc, char *argv[]) {
     std::cout << std::endl
         << "Fractal" << std::endl
-        << "(C)2018-19 Liam Kirton <liam@int3.ws>" << std::endl
+        << "(C)2018-20 Liam Kirton <liam@int3.ws>" << std::endl
         << std::endl;
 
     YAML::Node default_config;
