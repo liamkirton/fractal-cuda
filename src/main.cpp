@@ -286,19 +286,21 @@ bool run(run_state &r) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool run_interactive(run_state &r) {
+bool run_interactive(run_state& r) {
     HANDLE hExitEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
     HWND hWnd{ nullptr };
 
     std::mutex mutex_generate;
     std::mutex mutex_render;
     std::queue<std::tuple<int32_t, bool, uint64_t, uint64_t>> queue_generate;
-    std::queue<std::tuple<uint32_t, uint32_t, uint32_t *>> queue_render;
+    std::queue<std::tuple<uint32_t, uint32_t, uint32_t*>> queue_render;
 
     queue_generate.push(std::make_tuple(0, false, r.image_width / 2, r.image_height / 2));
 
-    uint32_t *image_buffer = new uint32_t[r.image_width * r.image_height];
-    memset(image_buffer, 0, sizeof(uint32_t) * r.image_width * r.image_height);
+    std::mutex image_buffer_mutex;
+    uint32_t image_buffer_width{ 0 };
+    uint32_t image_buffer_height{ 0 };
+    uint32_t* image_buffer{ nullptr };
 
     std::unique_ptr<png_writer> png(new png_writer(r.run_config));
 
@@ -313,6 +315,28 @@ bool run_interactive(run_state &r) {
                 coords = queue_generate.front();
                 queue_generate.pop();
             }
+
+            RECT client_rect{ 0 };
+            GetClientRect(hWnd, &client_rect);
+            
+            uint32_t image_width = client_rect.right - client_rect.left;
+            uint32_t image_height = client_rect.bottom - client_rect.top;
+
+            if ((image_width == 0) || (image_height == 0)) {
+                continue;
+            }
+            else if ((image_width != image_buffer_width) || (image_height != image_buffer_height)) {
+                std::lock_guard<std::mutex> lock(image_buffer_mutex);
+
+                image_buffer_width = image_width;
+                image_buffer_height = image_height;
+
+                delete[] image_buffer;
+                image_buffer = new uint32_t[image_buffer_width * image_buffer_height];
+            }
+
+            r.image_width = image_width;
+            r.image_height = image_height;
 
             fixed_point<T_I, T_F> re_c(r.re);
             fixed_point<T_I, T_F> im_c(r.im);
@@ -381,11 +405,16 @@ bool run_interactive(run_state &r) {
 
             uint32_t *src_buffer = std::get<2>(image);
 
+            std::lock_guard<std::mutex> lock(image_buffer_mutex);
+            if (image_buffer == nullptr) {
+                continue;
+            }
+
             if (r.oversample) {
                 uint32_t n = r.oversample_multiplier * r.oversample_multiplier;
 
-                for (uint32_t y = 0; y < r.image_height; ++y) {
-                    for (uint32_t x = 0; x < r.image_width; ++x) {
+                for (uint32_t y = 0; y < image_buffer_height; ++y) {
+                    for (uint32_t x = 0; x < image_buffer_width; ++x) {
                         uint32_t p_r{ 0 };
                         uint32_t p_g{ 0 };
                         uint32_t p_b{ 0 };
@@ -393,7 +422,7 @@ bool run_interactive(run_state &r) {
 
                         for (uint32_t y_k = 0; y_k < r.oversample_multiplier; ++y_k) {
                             for (uint32_t x_k = 0; x_k < r.oversample_multiplier; ++x_k) {
-                                uint32_t p_src = src_buffer[(r.oversample_multiplier * y + y_k) * (r.oversample_multiplier * r.image_width) + (r.oversample_multiplier * x + x_k)];
+                                uint32_t p_src = src_buffer[(r.oversample_multiplier * y + y_k) * (r.oversample_multiplier * image_buffer_width) + (r.oversample_multiplier * x + x_k)];
                                 p_a += (p_src & 0xff000000) >> 24;
                                 p_b += (p_src & 0x00ff0000) >> 16;
                                 p_g += (p_src & 0x0000ff00) >> 8;
@@ -401,12 +430,12 @@ bool run_interactive(run_state &r) {
                             }
                         }
 
-                        image_buffer[y * r.image_width + x] = ((p_a / n) << 24) | ((p_r / n) << 16) | ((p_g / n) << 8) | (p_b / n);
+                        image_buffer[y * image_buffer_width + x] = ((p_a / n) << 24) | ((p_r / n) << 16) | ((p_g / n) << 8) | (p_b / n);
                     }
                 }
             }
             else {
-                for (uint32_t i = 0; i < r.image_width * r.image_height; ++i) {
+                for (uint32_t i = 0; i < image_buffer_width * image_buffer_height; ++i) {
                     image_buffer[i] = (src_buffer[i] & 0xff00ff00) | ((src_buffer[i] & 0xff) << 16) | ((src_buffer[i] & 0xff0000) >> 16);
                 }
             }
@@ -418,6 +447,8 @@ bool run_interactive(run_state &r) {
     });
 
     std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> wndproc = [&](HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) -> LRESULT {
+        static bool resize_mask = false;
+
         switch (uMsg) {
         case WM_CLOSE:
             DestroyWindow(hWnd);
@@ -442,7 +473,13 @@ bool run_interactive(run_state &r) {
                     uint32_t *lpBitmapBits{ nullptr };
                     HBITMAP hBM = CreateDIBSection(hMDC, &bi, DIB_RGB_COLORS, reinterpret_cast<VOID**>(&lpBitmapBits), nullptr, 0);
                     if (hBM != nullptr) {
-                        memcpy(lpBitmapBits, image_buffer, sizeof(uint32_t) * r.image_width * r.image_height);
+                        std::lock_guard<std::mutex> lock(image_buffer_mutex);
+                        if (image_buffer != nullptr) {
+                            memcpy(lpBitmapBits, image_buffer, sizeof(uint32_t) * r.image_width * r.image_height);
+                        }
+                        else {
+                            memset(lpBitmapBits, 0, sizeof(uint32_t)* r.image_width* r.image_height);
+                        }
 
                         HGDIOBJ hPrev = SelectObject(hMDC, hBM);
                         BitBlt(hDC, 0, 0, r.image_width, r.image_height, hMDC, 0, 0, SRCCOPY);
@@ -507,7 +544,27 @@ bool run_interactive(run_state &r) {
                 queue_generate.push(std::make_tuple(zoom, false, x, y));
             }
         }
+        case WM_ENTERSIZEMOVE:
+            resize_mask = true;
+            break;
+        case WM_EXITSIZEMOVE: {
+            resize_mask = false; // fall through
+        }
+        case WM_SIZE: {
+            if (!resize_mask) {
+                RECT client_rect{ 0 };
+                GetClientRect(hWnd, &client_rect);
 
+                uint32_t image_width = client_rect.right - client_rect.left;
+                uint32_t image_height = client_rect.bottom - client_rect.top;
+                
+                if ((image_width != image_buffer_width) || (image_height != image_buffer_height)) {
+                    std::lock_guard<std::mutex> lock(mutex_generate);
+                    queue_generate.push(std::make_tuple(0, false, image_width / 2, image_height / 2));
+                }
+            }
+            break;
+        }
         default:
             return DefWindowProc(hWnd, uMsg, wParam, lParam);
         }
@@ -536,13 +593,21 @@ bool run_interactive(run_state &r) {
         return false;
     }
 
+    RECT window_rect{ 0 };
+    window_rect.bottom = r.image_height;
+    window_rect.right = r.image_width;
+    if (!AdjustWindowRect(&window_rect, WS_OVERLAPPEDWINDOW, FALSE)) {
+        std::cout << "[!] ERROR: AdjustWindowRect() Failed - " << GetLastError() << std::endl;
+        return false;
+    }
+
     hWnd = CreateWindow(wc.lpszClassName,
         "Fractal",
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+        WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
-        r.image_width,
-        r.image_height,
+        window_rect.right - window_rect.left,
+        window_rect.bottom - window_rect.top,
         nullptr,
         nullptr,
         wc.hInstance,

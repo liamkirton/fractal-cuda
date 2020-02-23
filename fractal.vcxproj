@@ -79,6 +79,7 @@
     </Link>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
+      <CodeGeneration>compute_75,sm_75</CodeGeneration>
     </CudaCompile>
     <PostBuildEvent>
       <Command>copy "third_party\libpng\projects\vstudio\bin\$(Platform)\$(Configuration)\*.dll" "$(OutDir)"</Command>
@@ -104,6 +105,7 @@
     </Link>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
+      <CodeGeneration>compute_75,sm_75</CodeGeneration>
     </CudaCompile>
     <PostBuildEvent>
       <Command>copy "third_party\libpng\projects\vstudio\bin\$(Platform)\$(Configuration)\*.dll" "$(OutDir)"</Command>

@@ -111,6 +111,7 @@ struct kernel_params {
             const uint32_t grid_x,
             const uint32_t grid_y) :
                 image_width_(image_width), image_height_(image_height),
+                image_viewport_((image_width > image_height) ? image_width : image_height),
                 escape_block_(escape_block), escape_limit_(escape_limit), colour_method_(colour_method),
                 escape_i_(0), escape_range_min_(0), escape_range_max_(escape_limit),
                 chunk_offset_(0),
@@ -121,6 +122,7 @@ struct kernel_params {
 
     uint32_t image_width_;
     uint32_t image_height_;
+    uint32_t image_viewport_;
 
     uint64_t escape_block_;
     uint64_t escape_limit_;
@@ -186,6 +188,7 @@ public:
                 uint64_t escape_limit, uint32_t cuda_groups, uint32_t cuda_threads) :
             image_(nullptr),
             image_width_(image_width), image_height_(image_height),
+            image_viewport_((image_width > image_height) ? image_width : image_height),
             cuda_groups_(cuda_groups), cuda_threads_(cuda_threads),
             escape_block_(escape_block), escape_limit_(escape_limit),
             colour_method_(0),
@@ -265,8 +268,6 @@ private:
     bool generate(kernel_params<T> &params, std::function<bool()> callback);
     bool generate_perturbation_reference(kernel_params<T> &params, std::function<bool()> callback);
 
-    void pixel_to_coord(uint32_t x, uint32_t image_width, T &re, uint32_t y, uint32_t image_height, T &im);
-
 private:
     uint32_t cuda_groups_;
     uint32_t cuda_threads_;
@@ -275,6 +276,7 @@ private:
 
     uint32_t image_width_;
     uint32_t image_height_;
+    uint32_t image_viewport_;
 
     uint8_t colour_method_;
     std::vector<std::tuple<double, double, double>> palette_;

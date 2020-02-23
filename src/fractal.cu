@@ -717,27 +717,6 @@ bool fractal<T>::generate_perturbation_reference(kernel_params<T> &params, std::
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<>
-void fractal<double>::pixel_to_coord(uint32_t x, uint32_t image_width, double &re, uint32_t y, uint32_t image_height,
-        double &im) {
-    re = re_ + (kReMin + x * (kReMax - kReMin) / image_width) * scale_;
-    im = im_ + (kImMax - y * (kImMax - kImMin) / image_height) * scale_;
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<typename T>
-void fractal<T>::pixel_to_coord(uint32_t x, uint32_t image_width, T &re, uint32_t y, uint32_t image_height, T &im) {
-    re.set(kReMin + x * (kReMax - kReMin) / image_width);
-    im.set(kImMax - y * (kImMax - kImMin) / image_height);
-    re.multiply(scale_);
-    im.multiply(scale_);
-    re.add(re_);
-    im.add(im_);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Kernels
 //
@@ -792,8 +771,11 @@ __global__ void kernel_init_mandelbrot(kernel_chunk<double> *chunks, kernel_para
     const double pixel_x = (params->chunk_offset_ + tid) % params->image_width_;
     const double pixel_y = (params->chunk_offset_ + tid) / params->image_width_;
 
-    const double re_c = params->re_ + (kReMin + pixel_x * (kReMax - kReMin) / params->image_width_) * params->scale_;
-    const double im_c = params->im_ + (kImMax - pixel_y * (kImMax - kImMin) / params->image_height_) * params->scale_;
+    const double pixel_shift_x = (params->image_viewport_ - params->image_width_) / 2;
+    const double pixel_shift_y = (params->image_viewport_ - params->image_height_) / 2;
+
+    const double re_c = params->re_ + (kReMin + (pixel_x + pixel_shift_x) * (kReMax - kReMin) / params->image_viewport_) * params->scale_;
+    const double im_c = params->im_ + (kImMax - (pixel_y + pixel_shift_y) * (kImMax - kImMin) / params->image_viewport_) * params->scale_;
 
     kernel_chunk<double> *chunk = &chunks[tid];
     chunk->escape_ = params->escape_limit_;

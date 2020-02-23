@@ -2,7 +2,7 @@
 # CUDA
 ###
 
-cuda_groups: 256
+cuda_groups: 8192
 cuda_threads: 1024
 
 ###
