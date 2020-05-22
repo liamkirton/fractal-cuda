@@ -11,6 +11,6 @@ vc*.pdb
 *.VC.db
 *.VC.opendb
 *.vcxproj.user
-*.png
 keys.json
 output
+venv

@@ -287,15 +287,13 @@ bool run(run_state &r) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool run_interactive(run_state& r) {
-    HANDLE hExitEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
-    HWND hWnd{ nullptr };
+    HANDLE exit_event = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+    HWND window_handle{ nullptr };
 
     std::mutex mutex_generate;
     std::mutex mutex_render;
     std::queue<std::tuple<int32_t, bool, uint64_t, uint64_t>> queue_generate;
     std::queue<std::tuple<uint32_t, uint32_t, uint32_t*>> queue_render;
-
-    queue_generate.push(std::make_tuple(0, false, r.image_width / 2, r.image_height / 2));
 
     std::mutex image_buffer_mutex;
     uint32_t image_buffer_width{ 0 };
@@ -305,7 +303,7 @@ bool run_interactive(run_state& r) {
     std::unique_ptr<png_writer> png(new png_writer(r.run_config));
 
     auto thread_generate = std::thread([&]() {
-        while (WaitForSingleObject(hExitEvent, 500) != WAIT_OBJECT_0) {
+        while (WaitForSingleObject(exit_event, 500) != WAIT_OBJECT_0) {
             std::tuple<int32_t, bool, uint64_t, uint64_t> coords{ 0, false, 0, 0 };
             {
                 std::lock_guard<std::mutex> lock(mutex_generate);
@@ -317,7 +315,7 @@ bool run_interactive(run_state& r) {
             }
 
             RECT client_rect{ 0 };
-            GetClientRect(hWnd, &client_rect);
+            GetClientRect(window_handle, &client_rect);
             
             uint32_t image_width = client_rect.right - client_rect.left;
             uint32_t image_height = client_rect.bottom - client_rect.top;
@@ -359,13 +357,9 @@ bool run_interactive(run_state& r) {
             int32_t direction = std::get<0>(coords);
             bool save_png = std::get<1>(coords);
 
-            if (direction > 0) {
-                count += 1;
-                skip += 1;
-            }
-            else if (direction < 0) {
-                count -= 1;
-                skip -= 1;
+            for (auto i = 0; i < abs(direction); ++i) {
+                count += (direction > 0) ? 1 : -1;
+                skip += (direction > 0) ? 1 : -1;
             }
 
             r.count = count >= 1 ? count : 1;
@@ -382,13 +376,13 @@ bool run_interactive(run_state& r) {
                 if (complete && save_png) {
                     png->write(i, suffix, ix);
                 }
-                return queue_generate.empty() && (hWnd != nullptr);
+                return queue_generate.empty() && (window_handle != nullptr);
             });
         }
     });
 
     auto thread_render = std::thread([&]() {
-        while (WaitForSingleObject(hExitEvent, 500) != WAIT_OBJECT_0) {
+        while (WaitForSingleObject(exit_event, 500) != WAIT_OBJECT_0) {
             std::tuple<uint32_t, uint32_t, uint32_t *> image{ 0, 0, nullptr };
             {
                 std::lock_guard<std::mutex> lock(mutex_render);
@@ -442,7 +436,7 @@ bool run_interactive(run_state& r) {
 
             delete[] src_buffer;
 
-            InvalidateRect(hWnd, nullptr, TRUE);
+            InvalidateRect(window_handle, nullptr, TRUE);
         }
     });
 
@@ -453,9 +447,11 @@ bool run_interactive(run_state& r) {
         case WM_CLOSE:
             DestroyWindow(hWnd);
             break;
+
         case WM_DESTROY:
             PostQuitMessage(0);
             break;
+
         case WM_PAINT:
             {
                 PAINTSTRUCT ps{ 0 };
@@ -491,19 +487,21 @@ bool run_interactive(run_state& r) {
                 EndPaint(hWnd, &ps);
             }
             break;
+
         case WM_LBUTTONUP:
         case WM_RBUTTONUP: 
         case WM_MBUTTONUP:
         {
-            bool save_png = (wParam & MK_CONTROL) == MK_CONTROL; 
+            uint32_t delta = ((GetKeyState(VK_CONTROL) & 0x8000) == 0x8000) ? 10 : 1;
+            bool save_png = (wParam & MK_SHIFT) == MK_SHIFT;
             int32_t zoom = 0;
 
             if (!save_png) {
                 if (uMsg == WM_LBUTTONUP) {
-                    zoom = 1;
+                    zoom = delta;
                 }
                 else if (uMsg == WM_RBUTTONUP) {
-                    zoom = -1;
+                    zoom = -static_cast<int32_t>(delta);
                 }
             }
 
@@ -511,6 +509,7 @@ bool run_interactive(run_state& r) {
             queue_generate.push(std::make_tuple(zoom, save_png, LOWORD(lParam), HIWORD(lParam)));
             break;
         }
+
         case WM_KEYUP:
         {
             uint32_t delta = (GetKeyState(VK_CONTROL) & 0x8000) ? ((GetKeyState(VK_SHIFT) & 0x8000) ? 1 : 5) : 10;
@@ -532,10 +531,10 @@ bool run_interactive(run_state& r) {
                 x += delta;
                 break;
             case VK_PRIOR:
-                zoom = -1;
+                zoom -= delta;
                 break;
             case VK_NEXT:
-                zoom = 1;
+                zoom += delta;
                 break;
             }
 
@@ -544,12 +543,14 @@ bool run_interactive(run_state& r) {
                 queue_generate.push(std::make_tuple(zoom, false, x, y));
             }
         }
+
         case WM_ENTERSIZEMOVE:
             resize_mask = true;
             break;
-        case WM_EXITSIZEMOVE: {
+
+        case WM_EXITSIZEMOVE:
             resize_mask = false; // fall through
-        }
+
         case WM_SIZE: {
             if (!resize_mask) {
                 RECT client_rect{ 0 };
@@ -565,9 +566,11 @@ bool run_interactive(run_state& r) {
             }
             break;
         }
+
         default:
             return DefWindowProc(hWnd, uMsg, wParam, lParam);
         }
+
         return 0;
     };
 
@@ -601,7 +604,7 @@ bool run_interactive(run_state& r) {
         return false;
     }
 
-    hWnd = CreateWindow(wc.lpszClassName,
+    window_handle = CreateWindow(wc.lpszClassName,
         "Fractal",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT,
@@ -613,13 +616,13 @@ bool run_interactive(run_state& r) {
         wc.hInstance,
         &wndproc);
 
-    if (hWnd == nullptr) {
+    if (window_handle == nullptr) {
         std::cout << "[!] ERROR: CreateWindow() Failed - " << GetLastError() << std::endl;
         return false;
     }
 
-    ShowWindow(hWnd, SW_SHOW);
-    UpdateWindow(hWnd);
+    ShowWindow(window_handle, SW_SHOW);
+    UpdateWindow(window_handle);
 
     MSG msg;
     while (GetMessage(&msg, nullptr, 0, 0)) {
@@ -627,12 +630,12 @@ bool run_interactive(run_state& r) {
         DispatchMessage(&msg);
     }
 
-    hWnd = nullptr;
+    window_handle = nullptr;
 
-    SetEvent(hExitEvent);
+    SetEvent(exit_event);
     thread_generate.join();
     thread_render.join();
-    CloseHandle(hExitEvent);
+    CloseHandle(exit_event);
 
     while (!queue_render.empty()) {
         delete[] std::get<2>(queue_render.front());

@@ -9,30 +9,29 @@ cuda_threads: 1024
 # Colouring
 ###
 
-colour_method: 2
+colour_method: 4
 colour_palette:
   - [0, 0, 0] # Points in set
-  - [205, 95, 15]
-  - [205, 95, 30]
-  - [205, 95, 50]
-  - [205, 100, 100]
-  - [175, 50, 100]
-  - [175, 0, 100]
-  - [100, 0, 100]
-  - [58, 0, 100]
-  - [58, 0, 100]
-  - [58, 100, 100]
-  - [58, 100, 100]
-  - [30, 100, 100]
-  - [25, 100, 100]
-  - [20, 75, 100]
+  - [230, 0, 10]
+  - [270, 60, 50]
+  - [270, 60, 50]
+  - [230, 80, 66]
+  - [230, 80, 66]
+  - [280, 80, 66]
+  - [280, 45, 66]
+  - [280, 10, 66]
+  - [280, 0, 50]
+  - [55, 0, 50]
+  - [55, 10, 90]
+  - [15, 65, 90]
+  - [15, 65, 90]
 
 ###
 # Fractal
 ###
 
-escape_block: 65536
-escape_limit: 524288
+escape_block: 131072
+escape_limit: 1048576
 escape_radius: 16.0
 
 re: -0.5
@@ -40,7 +39,7 @@ im: 0.0
 re_c: ""
 im_c: ""
 scale: 1.0
-scale_factor: 0.75
+scale_factor: 0.66
 
 perturbation: false
 grid_x: 32
@@ -66,5 +65,5 @@ count: 1
 skip: 0
 
 interactive: false
-oversample: false
+oversample: true
 oversample_multiplier: 2

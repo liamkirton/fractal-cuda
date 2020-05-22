@@ -16,15 +16,18 @@ args, other_args = parser.parse_known_args()
 
 try:
     api = twitter.Api(**json.loads(open('scripts/keys.json', 'r').read()))
-    tweet_list = list(api.GetUserTimeline(screen_name='randommandelbot', count=args.count))
+    tweet_list = list(api.GetUserTimeline(screen_name='randommandelbot', count=200))
+    random.shuffle(tweet_list)
 
     if args.interactive:
-        tweet_list = [random.choice(tweet_list)]
+        tweet_list = tweet_list[0:1]
+    else:
+        tweet_list = tweet_list[0:args.count]
 
     for tweet in tweet_list:
         coords = tweet.text.split(' ')
-        re = coords[0].replace('e+00', '')
-        im = coords[2][:-1].replace('e+00', '')
+        re = str(float(coords[0].replace('e+00', '')))
+        im = str(float(coords[2][:-1].replace('e+00', '')))
         scale = str(1.0/float(coords[5][:-1])).replace('e+00', '')
 
         print('>>> Random Mandelbrot', 're:', re, 'im:', im, 'scale:', scale)
@@ -33,7 +36,8 @@ try:
             'bin/x64/' + ('Debug' if args.debug else 'Release') + '/fractal.exe',
             '-re', re,
             '-im', im,
-            '-scale', scale
+            '-scale', scale,
+            '-oversample', 'true'
         ]
 
         if args.interactive:
