@@ -1,9 +1,9 @@
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Fractal
 // (C)2018-20 Liam Kirton <liam@int3.ws>
 //
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <algorithm>
 #include <cmath>
@@ -25,41 +25,63 @@
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template class fractal<double>;
-template class fractal<fixed_point<1, 2>>;
-template class fractal<fixed_point<1, 3>>;
-#ifndef _DEBUG
-template class fractal<fixed_point<1, 4>>;
-template class fractal<fixed_point<1, 6>>;
-template class fractal<fixed_point<1, 8>>;
-template class fractal<fixed_point<1, 12>>;
-template class fractal<fixed_point<1, 16>>;
-template class fractal<fixed_point<1, 20>>;
-template class fractal<fixed_point<1, 24>>;
-template class fractal<fixed_point<1, 28>>;
-template class fractal<fixed_point<1, 32>>;
-#endif
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Init Kernels
 
 __global__ void kernel_init_julia(kernel_chunk<double> *chunks, kernel_params<double> *params);
+
 __global__ void kernel_init_mandelbrot(kernel_chunk<double> *chunks, kernel_params<double> *params);
-__global__ void kernel_init_mandelbrot_perturbation(kernel_chunk_perturbation_reference<double> *ref_chunks, kernel_chunk<double> *chunks, kernel_params<double> *params);
-__global__ void kernel_init_mandelbrot_perturbation_reference(kernel_chunk_perturbation_reference<double> *ref_chunks, kernel_params<double> *params);
+
+__global__ void kernel_init_mandelbrot_perturbation(kernel_chunk_perturbation_reference<double> *ref_chunks,
+    kernel_chunk<double> *chunks,
+    kernel_params<double> *params);
+
+__global__ void kernel_init_mandelbrot_perturbation_reference(kernel_chunk_perturbation_reference<double> *ref_chunks,
+    kernel_params<double> *params);
+
+template<uint32_t I, uint32_t F> __global__ void kernel_init_julia(kernel_chunk<fixed_point<I, F>>* chunks,
+    kernel_params<fixed_point<I, F>>* params);
+
+template<uint32_t I, uint32_t F> __global__ void kernel_init_mandelbrot(kernel_chunk<fixed_point<I, F>>* chunks,
+    kernel_params<fixed_point<I, F>>* params);
+
+template<uint32_t I, uint32_t F> __global__ void kernel_init_mandelbrot_perturbation(
+    kernel_chunk_perturbation_reference<fixed_point<I, F>>* ref_chunks,
+    kernel_chunk<fixed_point<I, F>>* chunks, kernel_params<fixed_point<I, F>>* params);
+
+// Iterate Kernels
+
 __global__ void kernel_iterate(kernel_chunk<double> *chunks, kernel_params<double> *params);
-__global__ void kernel_iterate_perturbation(kernel_chunk_perturbation_reference<double> *ref_chunks, kernel_chunk_perturbation *chunks, kernel_params<double> *params);
-__global__ void kernel_iterate_perturbation_reference(kernel_chunk_perturbation_reference<double> *ref_chunks, kernel_params<double> *params);
 
-template<uint32_t I, uint32_t F> __global__ void kernel_init_julia(kernel_chunk<fixed_point<I, F>> *chunks, kernel_params<fixed_point<I, F>> *params);
-template<uint32_t I, uint32_t F> __global__ void kernel_init_mandelbrot(kernel_chunk<fixed_point<I, F>> *chunks, kernel_params<fixed_point<I, F>> *params);
-template<uint32_t I, uint32_t F> __global__ void kernel_init_mandelbrot_perturbation(kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks, kernel_chunk<fixed_point<I, F>> *chunks, kernel_params<fixed_point<I, F>> *params);
-template<uint32_t I, uint32_t F> __global__ void kernel_init_mandelbrot_perturbation_reference(kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks, kernel_params<fixed_point<I, F>> *params);
-template<uint32_t I, uint32_t F> __global__ void kernel_iterate(kernel_chunk<fixed_point<I, F>> *chunks, kernel_params<fixed_point<I, F>> *params);
-template<uint32_t I, uint32_t F> __global__ void kernel_iterate_perturbation(kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks, kernel_chunk_perturbation *chunks, kernel_params<fixed_point<I, F>> *params);
-template<uint32_t I, uint32_t F> __global__ void kernel_iterate_perturbation_reference(kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks, kernel_params<fixed_point<I, F>> *params);
+__global__ void kernel_iterate_perturbation(kernel_chunk_perturbation_reference<double> *ref_chunks,
+    kernel_chunk_perturbation *chunks, kernel_params<double> *params);
 
-template<typename S, typename T> __global__ void kernel_colour(S *chunks, kernel_params<T> *params, uint32_t *block_image);
-template<typename S, typename T> __global__ void kernel_reduce(S *chunks, kernel_params<T> *params, uint32_t chunk_count);
+__global__ void kernel_iterate_perturbation_reference(kernel_chunk_perturbation_reference<double> *ref_chunks,
+    kernel_params<double> *params);
+
+template<uint32_t I, uint32_t F> __global__ void kernel_init_mandelbrot_perturbation_reference(
+    kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks,
+    kernel_params<fixed_point<I, F>> *params);
+
+template<uint32_t I, uint32_t F> __global__ void kernel_iterate(kernel_chunk<fixed_point<I, F>> *chunks,
+    kernel_params<fixed_point<I, F>> *params);
+
+template<uint32_t I, uint32_t F> __global__ void kernel_iterate_perturbation(
+    kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks,
+    kernel_chunk_perturbation *chunks, kernel_params<fixed_point<I, F>> *params);
+
+template<uint32_t I, uint32_t F> __global__ void kernel_iterate_perturbation_reference(
+    kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks,
+    kernel_params<fixed_point<I, F>> *params);
+
+// Other Kernels
+
+template<typename S, typename T> __global__ void kernel_colour(S *chunks,
+    kernel_params<T> *params,
+    uint32_t *block_image);
+
+template<typename S, typename T> __global__ void kernel_reduce(S *chunks,
+    kernel_params<T> *params,
+    uint32_t chunk_count);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -162,10 +184,23 @@ template<typename T>
 bool fractal<T>::generate(std::function<bool()> callback) {
     resize(image_width_, image_height_);
 
-    kernel_params<T> params(image_width_, image_height_, escape_block_, escape_limit_, colour_method_, re_, im_, scale_, re_c_, im_c_, grid_x_, grid_y_);
+    kernel_params<T> params(image_width_,
+        image_height_,
+        escape_block_,
+        escape_limit_,
+        colour_method_,
+        re_,
+        im_,
+        scale_,
+        re_c_,
+        im_c_,
+        grid_x_,
+        grid_y_);
 
     if (perturbation_) {
-        params.escape_block_ = (params.escape_block_ > kKernelChunkPerturbationReferenceBlock) ? kKernelChunkPerturbationReferenceBlock : params.escape_block_;
+        params.escape_block_ = (params.escape_block_ > kKernelChunkPerturbationReferenceBlock) ?
+            kKernelChunkPerturbationReferenceBlock : params.escape_block_;
+
         if (!generate_perturbation_reference(params, callback)) {
             return false;
         }
@@ -313,7 +348,7 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
     }
 
     std::map<uint32_t, bool> chunk_completion;
-    for (auto i = 0; i < chunk_count; ++i) {
+    for (uint32_t i = 0; i < chunk_count; ++i) {
         chunk_completion[i] = false;
     }
 
@@ -347,7 +382,9 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
             params.chunk_offset_ = chunk_offset;
             params.escape_i_ = escape_i;
 
-            if ((cudaError = cudaMemcpy(params_device, &params, sizeof(params), cudaMemcpyHostToDevice)) != cudaSuccess) {
+            if ((cudaError = cudaMemcpy(params_device,
+                    &params,
+                    sizeof(params), cudaMemcpyHostToDevice)) != cudaSuccess) {
                 std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyHostToDevice): " << cudaError << std::endl;
                 return cleanup();
             }
@@ -358,7 +395,9 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
 
             if (perturbation_ && (chunk_i == 0)) {
                 if (escape_i == 0) {
-                    kernel_init_mandelbrot_perturbation_reference<<<1, 1>>>(chunk_perturbation_reference_buffer_device, params_device);
+                    kernel_init_mandelbrot_perturbation_reference<<<1, 1>>>(chunk_perturbation_reference_buffer_device,
+                        params_device);
+
                     if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                         std::cout << std::endl
                             << "[!] ERROR: cudaDeviceSynchronize() [ kernel_init_mandelbrot_perturbation_reference ]: "
@@ -367,7 +406,9 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                     }
                 }
 
-                kernel_iterate_perturbation_reference<<<1, 1>>>(chunk_perturbation_reference_buffer_device, params_device);
+                kernel_iterate_perturbation_reference<<<1, 1>>>(chunk_perturbation_reference_buffer_device,
+                    params_device);
+
                 if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                     std::cout << std::endl
                         << "[!] ERROR: cudaDeviceSynchronize() [ kernel_iterate_perturbation_reference ]: "
@@ -382,7 +423,11 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
 
             if (perturbation_) {
                 if (escape_i == 0) {
-                    kernel_init_mandelbrot_perturbation<<<chunk_cuda_groups, cuda_threads_>>>(chunk_perturbation_reference_buffer_device, chunk_perturbation_buffer_device, params_device);
+                    kernel_init_mandelbrot_perturbation<<<chunk_cuda_groups, cuda_threads_>>>(
+                        chunk_perturbation_reference_buffer_device,
+                        chunk_perturbation_buffer_device,
+                        params_device);
+
                     if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                         std::cout << std::endl
                             << "[!] ERROR: cudaDeviceSynchronize() [ kernel_init_mandelbrot_perturbation ]: "
@@ -406,7 +451,8 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                         kernel_init_julia<<<chunk_cuda_groups, cuda_threads_>>>(chunk_buffer_device, params_device);
                     }
                     else {
-                        kernel_init_mandelbrot<<<chunk_cuda_groups, cuda_threads_>>>(chunk_buffer_device, params_device);
+                        kernel_init_mandelbrot<<<chunk_cuda_groups, cuda_threads_>>>(chunk_buffer_device,
+                            params_device);
                     }
                 }
                 else if ((cudaError = cudaMemcpy(chunk_buffer_device,
@@ -426,7 +472,10 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                 //
 
                 if (perturbation_) {
-                    kernel_iterate_perturbation<<<chunk_cuda_groups, cuda_threads_>>>(chunk_perturbation_reference_buffer_device, chunk_perturbation_buffer_device, params_device);
+                    kernel_iterate_perturbation<<<chunk_cuda_groups, cuda_threads_>>>(
+                        chunk_perturbation_reference_buffer_device,
+                        chunk_perturbation_buffer_device,
+                        params_device);
                 }
                 else {
                     kernel_iterate<<<chunk_cuda_groups, cuda_threads_>>>(chunk_buffer_device, params_device);
@@ -475,10 +524,16 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                 }
 
                 if (perturbation_) {
-                    kernel_reduce<<<1, cuda_threads_>>>(chunk_perturbation_buffer_device, params_device, reduce_device, chunk_cuda_groups);
+                    kernel_reduce<<<1, cuda_threads_>>>(chunk_perturbation_buffer_device,
+                        params_device,
+                        reduce_device,
+                        chunk_cuda_groups);
                 }
                 else {
-                    kernel_reduce<<<1, cuda_threads_>>>(chunk_buffer_device, params_device, reduce_device, chunk_cuda_groups);
+                    kernel_reduce<<<1, cuda_threads_>>>(chunk_buffer_device,
+                        params_device,
+                        reduce_device,
+                        chunk_cuda_groups);
                 }
 
                 if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
@@ -529,10 +584,15 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
             }
 
             if (perturbation_) {
-                kernel_colour<kernel_chunk_perturbation, T><<<chunk_cuda_groups, cuda_threads_>>>(chunk_perturbation_buffer_device, params_device, image_device);
+                kernel_colour<kernel_chunk_perturbation, T><<<chunk_cuda_groups, cuda_threads_>>>(
+                    chunk_perturbation_buffer_device,
+                    params_device,
+                    image_device);
             }
             else {
-                kernel_colour<kernel_chunk<T>, T><<<chunk_cuda_groups, cuda_threads_>>>(chunk_buffer_device, params_device, image_device);
+                kernel_colour<kernel_chunk<T>, T><<<chunk_cuda_groups, cuda_threads_>>>(chunk_buffer_device,
+                    params_device,
+                    image_device);
             }
 
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
@@ -557,7 +617,7 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                 return cleanup();
             }
             else if (std::all_of(chunk_completion.begin(), chunk_completion.end(), [](auto &c) { return c.second; })) {
-                std::cout << std::endl << "    [+] Complete!" << std::endl;
+                std::cout << std::endl << "    [+] Complete!";
                 escape_i = escape_count;
                 break;
             }
@@ -568,7 +628,7 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
     return cleanup();
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
 bool fractal<T>::generate_perturbation_reference(kernel_params<T> &params, std::function<bool()> callback) {
@@ -648,10 +708,13 @@ bool fractal<T>::generate_perturbation_reference(kernel_params<T> &params, std::
             return cleanup();
         }
 
-        kernel_init_mandelbrot_perturbation_reference<<<grid_y_, grid_x_>>>(chunk_perturbation_reference_buffer_device, params_device);
+        kernel_init_mandelbrot_perturbation_reference<<<grid_y_, grid_x_>>>(chunk_perturbation_reference_buffer_device,
+            params_device);
+
         if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
             std::cout << std::endl
-                << "[!] ERROR: cudaDeviceSynchronize() [ kernel_init_mandelbrot_perturbation_reference ]: " << cudaError << std::endl;
+                << "[!] ERROR: cudaDeviceSynchronize() [ kernel_init_mandelbrot_perturbation_reference ]: "
+                << cudaError << std::endl;
             return cleanup();
         }
 
@@ -660,10 +723,13 @@ bool fractal<T>::generate_perturbation_reference(kernel_params<T> &params, std::
         //
 
         for (uint32_t escape_i = 0; escape_i < escape_count; ++escape_i) {
-            kernel_iterate_perturbation_reference<<<grid_y_, grid_x_>>>(chunk_perturbation_reference_buffer_device, params_device);
+            kernel_iterate_perturbation_reference<<<grid_y_, grid_x_>>>(chunk_perturbation_reference_buffer_device,
+                params_device);
+
             if ((cudaError = cudaDeviceSynchronize()) != cudaSuccess) {
                 std::cout << std::endl
-                    << "[!] ERROR: cudaDeviceSynchronize() [ kernel_iterate_perturbation_reference ]: " << cudaError << std::endl;
+                    << "[!] ERROR: cudaDeviceSynchronize() [ kernel_iterate_perturbation_reference ]: "
+                    << cudaError << std::endl;
                 return cleanup();
             }
         }
@@ -774,8 +840,11 @@ __global__ void kernel_init_mandelbrot(kernel_chunk<double> *chunks, kernel_para
     const double pixel_shift_x = (params->image_viewport_ - params->image_width_) / 2;
     const double pixel_shift_y = (params->image_viewport_ - params->image_height_) / 2;
 
-    const double re_c = params->re_ + (kReMin + (pixel_x + pixel_shift_x) * (kReMax - kReMin) / params->image_viewport_) * params->scale_;
-    const double im_c = params->im_ + (kImMax - (pixel_y + pixel_shift_y) * (kImMax - kImMin) / params->image_viewport_) * params->scale_;
+    const double re_c = params->re_ +
+        (kReMin + (pixel_x + pixel_shift_x) * (kReMax - kReMin) / params->image_viewport_) * params->scale_;
+
+    const double im_c = params->im_ +
+        (kImMax - (pixel_y + pixel_shift_y) * (kImMax - kImMin) / params->image_viewport_) * params->scale_;
 
     kernel_chunk<double> *chunk = &chunks[tid];
     chunk->escape_ = params->escape_limit_;
@@ -869,7 +938,8 @@ __global__ void kernel_init_mandelbrot_perturbation_reference(kernel_chunk_pertu
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<uint32_t I, uint32_t F>
-__global__ void kernel_init_mandelbrot_perturbation_reference(kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks,
+__global__ void kernel_init_mandelbrot_perturbation_reference(
+        kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks,
         kernel_params<fixed_point<I, F>> *params) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -1050,7 +1120,8 @@ __global__ void kernel_iterate_perturbation_reference(kernel_chunk_perturbation_
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<uint32_t I, uint32_t F>
-__global__ void kernel_iterate_perturbation_reference(kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks,
+__global__ void kernel_iterate_perturbation_reference(
+        kernel_chunk_perturbation_reference<fixed_point<I, F>> *ref_chunks,
         kernel_params<fixed_point<I, F>> *params) {
     const unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -1276,7 +1347,7 @@ __global__ void kernel_reduce(S *chunks, kernel_params<T> *params, kernel_reduce
     for (uint32_t i = 0; i < chunk_count; ++i) {
         S *c = &chunks[threadIdx.x + i * blockDim.x];
         if (c->escape_ < params->escape_limit_) {
-            //escape_reduce++;
+            escape_reduce++;
         }
         if (c->escape_ < escape_reduce_min) {
             escape_reduce_min = c->escape_;
@@ -1308,5 +1379,22 @@ __global__ void kernel_reduce(S *chunks, kernel_params<T> *params, kernel_reduce
 
     __syncthreads();
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template class fractal<double>;
+template class fractal<fixed_point<1, 2>>;
+template class fractal<fixed_point<1, 3>>;
+#ifndef _DEBUG
+template class fractal<fixed_point<1, 4>>;
+template class fractal<fixed_point<1, 6>>;
+template class fractal<fixed_point<1, 8>>;
+template class fractal<fixed_point<1, 12>>;
+template class fractal<fixed_point<1, 16>>;
+template class fractal<fixed_point<1, 20>>;
+template class fractal<fixed_point<1, 24>>;
+template class fractal<fixed_point<1, 28>>;
+template class fractal<fixed_point<1, 32>>;
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -1,9 +1,9 @@
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Fractal Generator
 // (C)2018-20 Liam Kirton <liam@int3.ws>
 //
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <windows.h>
 
@@ -34,7 +34,7 @@
 #include "png_writer.h"
 #include "timer.h"
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifdef _DEBUG
 constexpr uint32_t T_I = 2;
@@ -44,7 +44,7 @@ constexpr uint32_t T_I = 2;
 constexpr uint32_t T_F = 32;
 #endif
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct run_state {
     run_state() : count(1), skip(0), julia(false),
@@ -90,7 +90,7 @@ struct run_state {
     uint32_t escape_block;
 };
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 std::vector<std::tuple<double, double, double>> create_palette(run_state &r);
 void create_run_state(run_state &r, YAML::Node &run_config);
@@ -99,10 +99,20 @@ bool run(run_state &r);
 bool run_interactive(run_state &r);
 
 bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &, uint32_t)> callback);
-template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback);
-template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback);
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+template<uint32_t I, uint32_t F> bool run_step(
+    run_state &r,
+    uint32_t ix,
+    std::vector<std::tuple<double, double, double>> &palette,
+    std::function<bool(bool, image &, std::string &, uint32_t)> callback);
+
+template<> bool run_step<0, 0>(
+    run_state &r,
+    uint32_t ix,
+    std::vector<std::tuple<double, double, double>> &palette,
+    std::function<bool(bool, image &, std::string &, uint32_t)> callback);
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[]) {
     std::cout << std::endl
@@ -141,7 +151,10 @@ int main(int argc, char *argv[]) {
         p = p.substr(1);
         if (i < argc - 1) {
             std::string parse_v = argv[i + 1];
-            if ((parse_v.at(0) != '-') || std::all_of(parse_v.begin(), parse_v.end(), [](char c) { return isdigit(c) || (c == '.') || (c == '-') || (c == 'e') || (c == 'E'); })) {
+            if ((parse_v.at(0) != '-') ||
+                    std::all_of(parse_v.begin(), parse_v.end(), [](char c) {
+                        return isdigit(c) || (c == '.') || (c == '-') || (c == 'e') || (c == 'E');
+                    })) {
                 v = argv[++i];
             }
         }
@@ -187,7 +200,7 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 std::vector<std::tuple<double, double, double>> create_palette(run_state &r) {
     std::vector <std::tuple<double, double, double>> palette;
@@ -227,7 +240,7 @@ std::vector<std::tuple<double, double, double>> create_palette(run_state &r) {
     return palette;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void create_run_state(run_state &r, YAML::Node &run_config) {
     r.run_config = run_config;
@@ -272,7 +285,7 @@ void create_run_state(run_state &r, YAML::Node &run_config) {
     r.oversample_multiplier = r.run_config["oversample_multiplier"].as<uint32_t>();
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool run(run_state &r) {
     std::unique_ptr<png_writer> png(new png_writer(r.run_config));
@@ -284,7 +297,7 @@ bool run(run_state &r) {
     });
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool run_interactive(run_state& r) {
     HANDLE exit_event = CreateEvent(nullptr, TRUE, FALSE, nullptr);
@@ -367,7 +380,7 @@ bool run_interactive(run_state& r) {
 
             run_generate(r, [&](bool complete, image &i, std::string &suffix, uint32_t ix) {
                 const uint32_t *src_buffer = i.image_buffer();
-                uint32_t *render_buffer = new uint32_t[i.image_width() * i.image_height()];
+                uint32_t *render_buffer = new uint32_t[static_cast<size_t>(i.image_width()) * i.image_height()];
                 memcpy(render_buffer, i.image_buffer(), i.image_width() * i.image_height() * sizeof(uint32_t));
                 {
                     std::lock_guard<std::mutex> lock(mutex_render);
@@ -416,7 +429,9 @@ bool run_interactive(run_state& r) {
 
                         for (uint32_t y_k = 0; y_k < r.oversample_multiplier; ++y_k) {
                             for (uint32_t x_k = 0; x_k < r.oversample_multiplier; ++x_k) {
-                                uint32_t p_src = src_buffer[(r.oversample_multiplier * y + y_k) * (r.oversample_multiplier * image_buffer_width) + (r.oversample_multiplier * x + x_k)];
+                                uint32_t p_src = src_buffer[(r.oversample_multiplier * y + y_k) *
+                                    (r.oversample_multiplier * image_buffer_width) +
+                                    (r.oversample_multiplier * x + x_k)];
                                 p_a += (p_src & 0xff000000) >> 24;
                                 p_b += (p_src & 0x00ff0000) >> 16;
                                 p_g += (p_src & 0x0000ff00) >> 8;
@@ -424,13 +439,18 @@ bool run_interactive(run_state& r) {
                             }
                         }
 
-                        image_buffer[y * image_buffer_width + x] = ((p_a / n) << 24) | ((p_r / n) << 16) | ((p_g / n) << 8) | (p_b / n);
+                        image_buffer[y * image_buffer_width + x] = ((p_a / n) << 24) |
+                            ((p_r / n) << 16) |
+                            ((p_g / n) << 8) |
+                            (p_b / n);
                     }
                 }
             }
             else {
                 for (uint32_t i = 0; i < image_buffer_width * image_buffer_height; ++i) {
-                    image_buffer[i] = (src_buffer[i] & 0xff00ff00) | ((src_buffer[i] & 0xff) << 16) | ((src_buffer[i] & 0xff0000) >> 16);
+                    image_buffer[i] = (src_buffer[i] & 0xff00ff00) |
+                        ((src_buffer[i] & 0xff) << 16) |
+                        ((src_buffer[i] & 0xff0000) >> 16);
                 }
             }
 
@@ -440,7 +460,8 @@ bool run_interactive(run_state& r) {
         }
     });
 
-    std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> wndproc = [&](HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) -> LRESULT {
+    std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> wndproc = [&](HWND hWnd,
+            UINT uMsg, WPARAM wParam, LPARAM lParam) -> LRESULT {
         static bool resize_mask = false;
 
         switch (uMsg) {
@@ -467,7 +488,13 @@ bool run_interactive(run_state& r) {
                     bi.bmiHeader.biBitCount = 32;
                     
                     uint32_t *lpBitmapBits{ nullptr };
-                    HBITMAP hBM = CreateDIBSection(hMDC, &bi, DIB_RGB_COLORS, reinterpret_cast<VOID**>(&lpBitmapBits), nullptr, 0);
+                    HBITMAP hBM = CreateDIBSection(hMDC,
+                        &bi,
+                        DIB_RGB_COLORS,
+                        reinterpret_cast<VOID**>(&lpBitmapBits),
+                        nullptr,
+                        0);
+
                     if (hBM != nullptr) {
                         std::lock_guard<std::mutex> lock(image_buffer_mutex);
                         if (image_buffer != nullptr) {
@@ -586,7 +613,8 @@ bool run_interactive(run_state& r) {
     wc.lpfnWndProc = [](HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)->LRESULT {
         static std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> *wndproc{ nullptr };
         if (uMsg == WM_CREATE) {
-            wndproc = reinterpret_cast<std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> *>(reinterpret_cast<LPCREATESTRUCT>(lParam)->lpCreateParams);
+            wndproc = reinterpret_cast<std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> *>(
+                reinterpret_cast<LPCREATESTRUCT>(lParam)->lpCreateParams);
         }
         return (wndproc) ? (*wndproc)(hWnd, uMsg, wParam, lParam) : DefWindowProc(hWnd, uMsg, wParam, lParam);
     };
@@ -647,7 +675,7 @@ bool run_interactive(run_state& r) {
     return true;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
     std::vector<std::tuple<double, double, double>> palette = create_palette(r);
@@ -715,9 +743,13 @@ bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &,
     return true;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
+template<> bool run_step<0, 0>(run_state &r,
+        uint32_t ix,
+        std::vector<std::tuple<double, double, double>> &palette,
+        std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
+
     fractal<double> f(r.image_width, r.image_height);
     if (r.oversample) {
         f.resize(r.image_width * r.oversample_multiplier, r.image_height * r.oversample_multiplier);
@@ -773,9 +805,13 @@ template<> bool run_step<0, 0>(run_state &r, uint32_t ix, std::vector<std::tuple
     return true;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::vector<std::tuple<double, double, double>> &palette, std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
+template<uint32_t I, uint32_t F> bool run_step(run_state &r,
+        uint32_t ix,
+        std::vector<std::tuple<double, double, double>> &palette,
+        std::function<bool(bool, image &, std::string &, uint32_t)> callback) {
+
     fractal<fixed_point<I, F>> f(r.image_width, r.image_height);
     if (r.oversample) {
         f.resize(r.image_width * r.oversample_multiplier, r.image_height * r.oversample_multiplier);
@@ -806,7 +842,8 @@ template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::v
     if (r.julia) {
         fixed_point<I, F> re_c(r.re_c);
         fixed_point<I, F> im_c(r.im_c);
-        std::cout << "  [+] Julia: " << std::setprecision(12) << static_cast<double>(re_c) << ", " << std::setprecision(12) << static_cast<double>(im_c) << std::endl;
+        std::cout << "  [+] Julia: " << std::setprecision(12) << static_cast<double>(re_c) << ", "
+            << std::setprecision(12) << static_cast<double>(im_c) << std::endl;
         f.specify_julia(re_c, im_c);
     }
     else {
@@ -835,4 +872,4 @@ template<uint32_t I, uint32_t F> bool run_step(run_state &r, uint32_t ix, std::v
     return true;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
