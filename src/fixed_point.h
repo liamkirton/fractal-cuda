@@ -1,9 +1,4 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//
-// Fractal
-// (C)2018-20 Liam Kirton <liam@int3.ws>
-//
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #pragma once
 
@@ -15,20 +10,20 @@ public:
     inline __host__ __device__ fixed_point() : data{ 0 } {
     }
 
-    inline __host__ __device__ fixed_point(const fixed_point<I, F> &v) {
+    inline __host__ __device__ fixed_point(const fixed_point<I, F>& v) {
         memcpy(&data, &v.data, sizeof(data));
     }
 
-    inline __host__ __device__ fixed_point(const fixed_point<I, F> *v) {
+    inline __host__ __device__ fixed_point(const fixed_point<I, F>* v) {
         memcpy(&data, &v->data, sizeof(data));
     }
 
     template<typename T>
-    inline __host__ __device__ fixed_point(const T &v) {
+    inline __host__ __device__ fixed_point(const T& v) {
         set(v);
     }
 
-    inline __host__ __device__ fixed_point(const char *v) {
+    inline __host__ __device__ fixed_point(const char* v) {
         set(std::string(v));
     }
 
@@ -111,10 +106,10 @@ public:
         int64_t integer = t.get_integer();
 
         if (F == 1) {
-            fraction = static_cast<const uint64_t>(*reinterpret_cast<const uint32_t *>(&t.data[F - 1]));
+            fraction = static_cast<const uint64_t>(*reinterpret_cast<const uint32_t*>(&t.data[F - 1]));
         }
         else if (F == 2) {
-            fraction = *reinterpret_cast<const uint64_t *>(&t.data[F - 2]);
+            fraction = *reinterpret_cast<const uint64_t*>(&t.data[F - 2]);
             if ((integer == 0) && ((fraction & 0xfff0000000000000) == 0)) {
                 fraction <<= 12;
                 exponent -= 12;
@@ -124,20 +119,20 @@ public:
             fraction = (static_cast<uint64_t>(t.data[F - 1]) << 32) | t.data[F - 2];
             if ((integer == 0) && ((fraction & 0xfff0000000000000) == 0)) {
                 fraction = 0;
-                for (int32_t i = F - 1; i >= 0; --i) {
+                for (int64_t i = F - 1; i >= 0; --i) {
                     uint64_t v = t.data[i];
                     if (v != 0) {
-                        for (int32_t j = 31; j >= 0; --j) {
+                        for (int64_t j = 31; j >= 0; --j) {
                             if (v & (1ULL << j)) {
-                                v <<= (32 + 31 - j);
+                                v <<= (32LL + 31LL - j);
                                 fraction |= v;
                                 v = ((i - 1) >= 0) ? t.data[i - 1] : 0;
-                                v <<= (31 - j);
+                                v <<= (31LL - j);
                                 fraction |= v;
                                 v = ((i - 2) >= 0) ? t.data[i - 2] : 0;
-                                v >>= j + 1;
+                                v >>= j + 1LL;
                                 fraction |= v;
-                                exponent -= (32 * (F - 1 - i) + (31 - j));
+                                exponent -= (32LL * (F - 1LL - i) + (31LL - j));
                                 break;
                             }
                         }
@@ -149,8 +144,8 @@ public:
 
         double delta;
         double value;
-        *reinterpret_cast<uint64_t *>(&delta) = ((exponent & 0x7ff) << 52);
-        *reinterpret_cast<uint64_t *>(&value) = ((exponent & 0x7ff) << 52) | (fraction >> 12);
+        *reinterpret_cast<uint64_t*>(&delta) = ((exponent & 0x7ff) << 52);
+        *reinterpret_cast<uint64_t*>(&value) = ((exponent & 0x7ff) << 52) | (fraction >> 12);
 
         value = static_cast<double>(integer) + value - delta;
         if (negative) {
@@ -161,16 +156,16 @@ public:
 
     inline __host__ __device__ uint64_t get_fractional() const {
         if (F == 1) {
-            return static_cast<const uint64_t>(*reinterpret_cast<const uint32_t *>(&data[F - 1]));
+            return static_cast<const uint64_t>(*reinterpret_cast<const uint32_t*>(&data[F - 1]));
         }
-        return *reinterpret_cast<const uint64_t *>(&data[F - 2]);
+        return *reinterpret_cast<const uint64_t*>(&data[F - 2]);
     }
 
     inline __host__ __device__ int64_t get_integer() const {
         if (I == 1) {
-            return static_cast<const int64_t>(*reinterpret_cast<const int32_t *>(&data[F]));
+            return static_cast<const int64_t>(*reinterpret_cast<const int32_t*>(&data[F]));
         }
-        return *reinterpret_cast<const int64_t *>(&data[F]);
+        return *reinterpret_cast<const int64_t*>(&data[F]);
     }
 
     inline __host__ std::string get_string() const {
@@ -186,10 +181,10 @@ public:
         decimal_part.zero_integer();
 
         std::string integer;
-        if (integer_part.is_zero()) {
+        if (integer_part.is_zero_integer()) {
             integer = "0";
         }
-        while (!integer_part.is_zero()) {
+        while (!integer_part.is_zero_integer()) {
             uint64_t v = (integer_part.get_integer() % 10);
             integer += static_cast<char>('0' + v);
 
@@ -201,7 +196,7 @@ public:
         std::reverse(integer.begin(), integer.end());
 
         std::string decimal;
-        for (uint32_t i = 0; i < static_cast<uint32_t>(32 * F * log(2.0) / log(10.0)); ++i) {
+        for (uint32_t i = 0; i < static_cast<uint32_t>(32LL * F * log(2.0) / log(10.0)); ++i) {
             decimal_part.multiply(10ULL);
             decimal += static_cast<char>('0' + (decimal_part.get_integer() % 10));
             decimal_part.zero_integer();
@@ -216,6 +211,24 @@ public:
     }
 
     inline __host__ __device__ bool is_zero() const {
+        for (uint32_t i = 0; i < I + F; ++i) {
+            if (data[i] != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    inline __host__ __device__ bool is_zero_decimal() const {
+        for (uint32_t i = 0; i < F; ++i) {
+            if (data[i] != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    inline __host__ __device__ bool is_zero_integer() const {
         for (uint32_t i = F; i < I + F; ++i) {
             if (data[i] != 0) {
                 return false;
@@ -228,12 +241,12 @@ public:
         return (data[I + F - 1] & 0x80000000) != 0;
     }
 
-    inline __host__ __device__ void set(const fixed_point<I, F> &v) {
+    inline __host__ __device__ void set(const fixed_point<I, F>& v) {
         memcpy(&data, &v.data, sizeof(data));
     }
 
     template<uint32_t I_X, uint32_t F_X>
-    inline __host__ __device__ void set(const fixed_point<I_X, F_X> &v) {
+    inline __host__ __device__ void set(const fixed_point<I_X, F_X>& v) {
         memset(&data, 0, sizeof(data));
 
         memcpy(&data[F], &v.data[F_X], sizeof(uint32_t) * ((I <= I_X) ? I : I_X));
@@ -243,15 +256,15 @@ public:
         }
     }
 
-    inline __host__ __device__ void set(const int &v) {
+    inline __host__ __device__ void set(const int& v) {
         set(static_cast<int64_t>(v));
     }
 
-    inline __host__ __device__ void set(const unsigned int &v) {
+    inline __host__ __device__ void set(const unsigned int& v) {
         set(static_cast<uint64_t>(v));
     }
 
-    inline __host__ __device__ void set(const int64_t &v) {
+    inline __host__ __device__ void set(const int64_t& v) {
         zero();
         data[F] = v & 0xffffffff;
         if (2 <= I) {
@@ -264,7 +277,7 @@ public:
         }
     }
 
-    inline __host__ __device__ void set(const uint64_t &v) {
+    inline __host__ __device__ void set(const uint64_t& v) {
         zero();
         data[F] = v & 0xffffffff;
         if (2 <= I) {
@@ -272,7 +285,7 @@ public:
         }
     }
 
-    inline __host__ __device__ void set(const double &v) {
+    inline __host__ __device__ void set(const double& v) {
         double integer{ 0 };
         double decimal = modf(fabs(v), &integer);
         set(static_cast<int64_t>(integer));
@@ -343,28 +356,57 @@ public:
 
         tens.set(10);
 
-        fixed_point<I + F, I + F> decimal_part;
-        for (uint64_t i = 0; i < decimal.length(); ++i) {
-            fixed_point<I + F, I + F> v(decimal.at(i) - '0');
-            fixed_point<I + F, I + F> t;
-            for (uint64_t j = 0; j < 32 * (I + F); ++j) {
-                fixed_point<I + F, I + F> v_div;
-                v.multiply(2ULL);
-                v.multiply(tenths, v_div);
+        std::vector<
+            std::tuple<
+            fixed_point<I + F, I + F>,
+            fixed_point<I + F, I + F>,
+            fixed_point<I + F, I + F>
+            >
+        > decimal_digits;
 
-                uint64_t bit_value = v_div.get_integer();
-                if (bit_value != 0) {
-                    t.bit_set(32 * (I + F) - (j + 1), bit_value);
-                }
+        std::vector<std::thread> decimal_threads;
 
-                v_div.zero_decimal();
-                v_div.multiply(tens);
-                v_div.negate();
-                v.add(v_div);
-            }
+        const size_t decimal_length = std::min(decimal.length(), static_cast<size_t>(32ULL * (I + F) * log(2.0) / log(10.0)));
+        decimal_digits.reserve(decimal_length);
+        decimal_threads.reserve(decimal_length);
+
+        for (size_t i = 0; i < decimal_length; ++i) {
+            decimal_digits.push_back(std::make_tuple(decimal.at(i) - '0', tens, tenths));
             tens.multiply(10ULL);
             tenths.multiply(0.1);
-            decimal_part.add(t);
+
+            decimal_threads.push_back(std::thread([&decimal_digits](size_t ix) {
+                auto& v = std::get<0>(decimal_digits[ix]);
+                auto& tens = std::get<1>(decimal_digits[ix]);
+                auto& tenths = std::get<2>(decimal_digits[ix]);
+
+                if (!v.is_zero()) {
+                    fixed_point<I + F, I + F> t;
+                    fixed_point<I + F, I + F> v_div;
+
+                    for (uint64_t j = 0; (j < (32 * (I + F))) && !v.is_zero(); ++j) {
+                        v.shiftl(1);
+                        v.multiply(tenths, v_div);
+
+                        uint64_t bit_value = v_div.get_integer();
+                        if (bit_value != 0) {
+                            t.bit_set(32 * (I + F) - (j + 1), bit_value);
+                        }
+
+                        v_div.zero_decimal();
+                        v_div.multiply(tens);
+                        v_div.negate();
+                        v.add(v_div);
+                    }
+                    v.set(t);
+                }
+                }, i));
+        }
+
+        fixed_point<I + F, I + F> decimal_part;
+        for (uint64_t i = 0; i < decimal_length; ++i) {
+            decimal_threads[i].join();
+            decimal_part.add(std::get<0>(decimal_digits[i]));
         }
 
         std::memcpy(&data[0], &decimal_part.data[I], sizeof(uint32_t) * F);
@@ -391,7 +433,7 @@ public:
     // Operations
     //
 
-    inline __host__ __device__ void add(const fixed_point<I, F> &v) {
+    inline __host__ __device__ void add(const fixed_point<I, F>& v) {
         uint64_t carry = 0;
         for (uint32_t i = 0; i < I + F; ++i) {
             uint64_t sum = static_cast<uint64_t>(data[i]) + static_cast<uint64_t>(v.data[i]) + carry;
@@ -404,13 +446,13 @@ public:
         uint64_t carry = 0;
         for (uint32_t i = 0; i < ((I < 3) ? I : 3); ++i) {
             uint64_t sum = static_cast<uint64_t>(data[F + i]) + ((i < 2) ?
-                static_cast<uint64_t>(reinterpret_cast<const uint32_t *>(&v)[i]) : 0) + carry;
+                static_cast<uint64_t>(reinterpret_cast<const uint32_t*>(&v)[i]) : 0) + carry;
             data[F + i] = (sum & 0xffffffff);
             carry = (sum >> 32);
         }
     }
 
-    inline __host__ __device__ void add(const double &v) {
+    inline __host__ __device__ void add(const double& v) {
         fixed_point<I, F> t(v);
         add(t);
     }
@@ -422,26 +464,26 @@ public:
     }
 
     template<typename T>
-    inline __host__ __device__ void multiply(const T &b) {
+    inline __host__ __device__ void multiply(const T& b) {
         uint32_t result[I + F];
         multiply(b, result);
         memcpy(&data, &result, sizeof(data));
     }
 
     template<typename T>
-    inline __host__ __device__ void multiply(const T &b, fixed_point<I, F> &result) {
+    inline __host__ __device__ void multiply(const T& b, fixed_point<I, F>& result) {
         multiply(b, result.data);
     }
 
-    inline __host__ __device__ void multiply(const double &b, uint32_t(&result)[I + F]) {
+    inline __host__ __device__ void multiply(const double& b, uint32_t(&result)[I + F]) {
         fixed_point<I, F> t(b);
         multiply(t, result);
     }
 
-    inline __host__ __device__ void multiply(const uint64_t &b, uint32_t(&result)[I + F]) {
+    inline __host__ __device__ void multiply(const uint64_t& b, uint32_t(&result)[I + F]) {
         fixed_point<I + F, 0> accum;
 
-        volatile const fixed_point<I, F> *a_p = this; // CUDA Compiler Bug (22/07/2018)
+        volatile const fixed_point<I, F>* a_p = this; // CUDA Compiler Bug (22/07/2018)
         uint32_t a_ext = (data[(I + F) - 1] & 0x80000000) ? 0xffffffff : 0;
 
         for (uint32_t i = F; i < I + 2 * F; ++i) {
@@ -467,12 +509,12 @@ public:
         }
     }
 
-    inline __host__ __device__ void multiply(const fixed_point<I, F> &b, uint32_t(&result)[I + F]) {
+    inline __host__ __device__ void multiply(const fixed_point<I, F>& b, uint32_t(&result)[I + F]) {
         fixed_point<I + F, 0> accum;
 
         // CUDA Compiler Bug (22/07/2018)
-        volatile const fixed_point<I, F> *a_p = this;
-        volatile const fixed_point<I, F> *b_p = &b;
+        volatile const fixed_point<I, F>* a_p = this;
+        volatile const fixed_point<I, F>* b_p = &b;
 
         uint32_t a_ext = (data[(I + F) - 1] & 0x80000000) ? 0xffffffff : 0;
         uint32_t b_ext = (b.data[(I + F) - 1] & 0x80000000) ? 0xffffffff : 0;
@@ -564,7 +606,7 @@ public:
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<uint32_t I, uint32_t F>
-std::ostream& operator<<(std::ostream &o, const fixed_point<I, F> &v) {
+std::ostream& operator<<(std::ostream& o, const fixed_point<I, F>& v) {
     o << static_cast<std::string>(v);
     return o;
 }
