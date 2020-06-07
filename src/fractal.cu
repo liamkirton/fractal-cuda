@@ -201,8 +201,8 @@ bool fractal<T>::generate(std::function<bool()> callback) {
         grid_y_);
 
     if (perturbation_) {
-        params.escape_block_ = (params.escape_block_ > kKernelChunkPerturbationReferenceBlock) ?
-            kKernelChunkPerturbationReferenceBlock : params.escape_block_;
+        escape_block_ = params.escape_block_ = (escape_block_ > kKernelChunkPerturbationReferenceBlock) ?
+            kKernelChunkPerturbationReferenceBlock : escape_block_;
 
         if (!generate_perturbation_reference(params, callback)) {
             return false;
@@ -350,9 +350,9 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
         chunk_count++;
     }
 
-    std::map<uint32_t, bool> chunk_completion;
+    std::map<uint32_t, bool> chunk_status;
     for (uint32_t i = 0; i < chunk_count; ++i) {
-        chunk_completion[i] = false;
+        chunk_status[i] = false;
     }
 
     uint32_t escape_count = static_cast<uint32_t>(escape_limit_ / escape_block_);
@@ -364,8 +364,11 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
     // Generation Loop
     //
 
-    params.escape_range_min_ = 0xffffffffffffffff;
-    params.escape_range_max_ = 0;
+    uint64_t escape_range_min = 0xffffffffffffffff;
+    uint64_t escape_range_max = 0;
+
+    params.escape_range_min_ = 0;
+    params.escape_range_max_ = escape_limit_;
 
     for (uint64_t escape_i = 0; escape_i <= escape_count; ++escape_i) {
         for (uint32_t chunk_i = 0; chunk_i < chunk_count; ++chunk_i) {
@@ -377,10 +380,8 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
             std::cout << "\r    [+] Chunk: "
                 << chunk_i + 1 << " / " << chunk_count
                 << ", Block: " << escape_i * escape_block_ << " / " << escape_limit_
-                << (chunk_completion[chunk_i] ? ", Complete" : "")
-                << ", Range: " << params.escape_range_min_ << " : " << params.escape_range_max_
+                << (chunk_status[chunk_i] ? ", Complete" : "")
                 << std::flush;
-            std::cout << fill_console_line();
 
             params.chunk_offset_ = chunk_offset;
             params.escape_i_ = escape_i;
@@ -469,7 +470,7 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                 }
             }
 
-            if ((chunk_i < chunk_count) && !chunk_completion[chunk_i]) {
+            if ((chunk_i < chunk_count) && !chunk_status[chunk_i]) {
                 //
                 // Core Chunk Iteration
                 //
@@ -558,14 +559,18 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                 }
 
                 if (reduce.escape_reduce_ == (chunk_cuda_groups * cuda_threads_)) {
-                    chunk_completion[chunk_i] = true;
+                    chunk_status[chunk_i] = true;
                 }
-                if (reduce.escape_reduce_min_ < params.escape_range_min_) {
-                    params.escape_range_min_ = reduce.escape_reduce_min_;
+                if (reduce.escape_reduce_min_ < escape_range_min) {
+                    escape_range_min = params.escape_range_min_ = reduce.escape_reduce_min_;
                 }
-                if (reduce.escape_reduce_max_ > params.escape_range_max_) {
-                    params.escape_range_max_ = reduce.escape_reduce_max_;
+                if (reduce.escape_reduce_max_ > escape_range_max) {
+                    escape_range_max = params.escape_range_max_ = reduce.escape_reduce_max_;
                 }
+
+                std::cout << "; Range: " << params.escape_range_min_ << " : "
+                    << params.escape_range_max_ << std::flush;
+                std::cout << fill_console_line();
 
                 if ((cudaError = cudaMemcpy(params_device, &params, sizeof(params),
                         cudaMemcpyHostToDevice)) != cudaSuccess) {
@@ -620,7 +625,7 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                 return cleanup();
             }
             else if ((escape_i < escape_count) &&
-                     std::all_of(chunk_completion.begin(), chunk_completion.end(), [](auto &c) { return c.second; })) {
+                     std::all_of(chunk_status.begin(), chunk_status.end(), [](auto &c) { return c.second; })) {
                 escape_i = (escape_count - 1);
             }
         }
@@ -680,11 +685,10 @@ bool fractal<T>::generate_perturbation_reference(kernel_params<T> &params, std::
     // Reference Loop
     //
 
-    uint32_t escape_count = static_cast<uint32_t>(escape_limit_ / escape_block_);
+    uint32_t escape_count = static_cast<uint32_t>(escape_limit_ / kKernelChunkPerturbationReferenceBlock);
     if ((escape_limit_ % escape_block_) != 0) {
         escape_count++;
     }
-    escape_count = std::min(escape_count, grid_steps_);
 
     kernel_params<T> params_reference = params;
 
@@ -725,6 +729,14 @@ bool fractal<T>::generate_perturbation_reference(kernel_params<T> &params, std::
         //
 
         for (uint32_t escape_i = 0; escape_i < escape_count; ++escape_i) {
+            params_reference.escape_i_ = escape_i;
+
+            if ((cudaError = cudaMemcpy(params_device, &params_reference, sizeof(params_reference),
+                cudaMemcpyHostToDevice)) != cudaSuccess) {
+                std::cout << std::endl << "[!] ERROR: cudaMemcpy(cudaMemcpyHostToDevice): " << cudaError << std::endl;
+                return cleanup();
+            }
+
             kernel_iterate_perturbation_reference<<<grid_y_, grid_x_>>>(chunk_perturbation_reference_buffer_device,
                 params_device);
 
@@ -754,17 +766,19 @@ bool fractal<T>::generate_perturbation_reference(kernel_params<T> &params, std::
         for (uint32_t i = 0; i < grid_x_ * grid_y_; ++i) {
             kernel_chunk_perturbation_reference<T> *ref_chunk = &chunk_perturbation_reference_buffer[i];
 
-            double ref_abs = ref_chunk->re_d_[ref_chunk->index_ - 1] * ref_chunk->re_d_[ref_chunk->index_ - 1] +
-                ref_chunk->im_d_[ref_chunk->index_ - 1] * ref_chunk->im_d_[ref_chunk->index_ - 1];
+            if (ref_chunk->index_ > 0) {
+                double ref_abs = ref_chunk->re_d_[ref_chunk->index_ - 1] * ref_chunk->re_d_[ref_chunk->index_ - 1] +
+                    ref_chunk->im_d_[ref_chunk->index_ - 1] * ref_chunk->im_d_[ref_chunk->index_ - 1];
 
-            uint64_t ref_escape = ref_chunk->escape_;
+                uint64_t ref_escape = ref_chunk->escape_;
 
-            if ((ref_escape > escape_max) || ((ref_escape == escape_max) && (ref_abs < abs_min))) {
-                abs_min = ref_abs;
-                escape_max = ref_escape;
+                if ((ref_escape > escape_max) || ((ref_escape == escape_max) && (ref_abs < abs_min))) {
+                    abs_min = ref_abs;
+                    escape_max = ref_escape;
 
-                params_reference.re_ref_ = ref_chunk->re_c_;
-                params_reference.im_ref_ = ref_chunk->im_c_;
+                    params_reference.re_ref_ = ref_chunk->re_c_;
+                    params_reference.im_ref_ = ref_chunk->im_c_;
+                }
             }
         }
 
@@ -1137,14 +1151,14 @@ __global__ void kernel_iterate_perturbation_reference(
     const uint64_t escape_block = params->escape_block_;
     const uint64_t escape_limit = params->escape_limit_;
 
-    fixed_point<I, F> re_prod;
-    fixed_point<I, F> im_prod;
-    re.multiply(re, re_prod);
-    im.multiply(im, im_prod);
-
-    uint64_t index = ref_chunk->index_ = 0;
-
     if (escape == escape_limit) {
+        uint64_t index = ref_chunk->index_ = 0;
+
+        fixed_point<I, F> re_prod;
+        fixed_point<I, F> im_prod;
+        re.multiply(re, re_prod);
+        im.multiply(im, im_prod);
+
         for (uint64_t i = 0; i < escape_block; ++i) {
             im.multiply(re);
             im.multiply(2ULL);
@@ -1398,6 +1412,9 @@ template class fractal<fixed_point<1, 20>>;
 template class fractal<fixed_point<1, 24>>;
 template class fractal<fixed_point<1, 28>>;
 template class fractal<fixed_point<1, 32>>;
+template class fractal<fixed_point<1, 48>>;
+template class fractal<fixed_point<1, 56>>;
+template class fractal<fixed_point<1, 64>>;
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

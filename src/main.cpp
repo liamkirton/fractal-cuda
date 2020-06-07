@@ -40,17 +40,17 @@
 
 #ifdef _DEBUG
 constexpr uint32_t T_I = 2;
-constexpr uint32_t T_F = 8;
+constexpr uint32_t T_F = 4;
 #else
 constexpr uint32_t T_I = 2;
-constexpr uint32_t T_F = 32;
+constexpr uint32_t T_F = 64;
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct run_state {
     run_state() : count(1), skip(0), julia(false),
-        perturbation(false), grid_x(32), grid_y(32), grid_levels(4), grid_steps(4),
+        perturbation(false), grid_x(32), grid_y(32), grid_levels(4),
         image_width(1024), image_height(768),
         cuda_groups(kDefaultCudaGroups), cuda_threads(kDefaultCudaThreads),
         colour_method(2), escape_limit(kDefaultEscapeLimit), escape_block(kDefaultEscapeBlock) {}
@@ -70,7 +70,6 @@ struct run_state {
     uint32_t grid_x;
     uint32_t grid_y;
     uint32_t grid_levels;
-    uint32_t grid_steps;
 
     bool julia;
     fixed_point<T_I, T_F> re_c;
@@ -262,7 +261,6 @@ void create_run_state(run_state &r, YAML::Node &run_config) {
     r.grid_x = r.run_config["grid_x"].as<uint32_t>();
     r.grid_y = r.run_config["grid_y"].as<uint32_t>();
     r.grid_levels = r.run_config["grid_levels"].as<uint32_t>(); 
-    r.grid_steps = r.run_config["grid_steps"].as<uint32_t>();
 
     r.image_width = run_config["image_width"].as<uint32_t>();
     r.image_height = run_config["image_height"].as<uint32_t>();
@@ -731,6 +729,15 @@ bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &,
             else if (precision_bit < 32 * 32) {
                 run_step<1, 32>(r, i, palette, callback);
             }
+            else if (precision_bit < 32 * 48) {
+                run_step<1, 48>(r, i, palette, callback);
+            }
+            else if (precision_bit < 32 * 56) {
+                run_step<1, 56>(r, i, palette, callback);
+            }
+            else if (precision_bit < 32 * 64) {
+                run_step<1, 64>(r, i, palette, callback);
+            }
 #endif
             else {
                 std::cout << " - UNSUPPORTED" << std::endl;
@@ -838,7 +845,7 @@ template<uint32_t I, uint32_t F> bool run_step(run_state &r,
 
     f.specify(re, im, scale, r.perturbation);
     if (r.perturbation) {
-        f.grid(r.grid_x, r.grid_y, r.grid_levels, r.grid_steps);
+        f.grid(r.grid_x, r.grid_y, r.grid_levels);
     }
 
     if (r.julia) {

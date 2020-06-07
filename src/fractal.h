@@ -37,7 +37,7 @@ constexpr uint32_t kDefaultEscapeBlock = 65536;
 constexpr uint32_t kDefaultEscapeLimit = 1048576;
 constexpr uint32_t kDefaultImageWidth = 1024;
 constexpr uint32_t kDefaultImageHeight = 768;
-constexpr size_t kKernelChunkPerturbationReferenceBlock = 4096;
+constexpr size_t kKernelChunkPerturbationReferenceBlock = 131072;
 #endif
 
 constexpr double kDefaultEscapeRadius = 16.0;
@@ -85,13 +85,8 @@ struct kernel_chunk_perturbation_reference {
     T im_c_;
     T re_;
     T im_;
-#ifdef _DEBUG
     double re_d_[kKernelChunkPerturbationReferenceBlock];
     double im_d_[kKernelChunkPerturbationReferenceBlock];
-#else
-    double re_d_[kKernelChunkPerturbationReferenceBlock];
-    double im_d_[kKernelChunkPerturbationReferenceBlock];
-#endif
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -192,7 +187,7 @@ public:
             cuda_groups_(cuda_groups), cuda_threads_(cuda_threads),
             escape_block_(escape_block), escape_limit_(escape_limit),
             colour_method_(0),
-            perturbation_(false), grid_x_(32), grid_y_(32), grid_levels_(1), grid_steps_(1),
+            perturbation_(false), grid_x_(32), grid_y_(32), grid_levels_(1),
             julia_(false), re_c_(0), im_c_(0) {
         initialise();
         specify(0.0, 0.0, 1.0, false);
@@ -223,11 +218,10 @@ public:
         palette_ = palette;
     }
 
-    void grid(const uint32_t x, const uint32_t y, const uint32_t levels, const uint32_t steps) {
+    void grid(const uint32_t x, const uint32_t y, const uint32_t levels) {
         grid_x_ = x;
         grid_y_ = y;
         grid_levels_ = levels;
-        grid_steps_ = steps;
     }
 
     void resize(const uint32_t image_width, const uint32_t image_height);
@@ -289,7 +283,6 @@ private:
     uint32_t grid_x_;
     uint32_t grid_y_;
     uint32_t grid_levels_;
-    uint32_t grid_steps_;
 
     bool julia_;
     T re_c_;
