@@ -11,6 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\console.h" />
     <ClInclude Include="src\fixed_point.h" />
     <ClInclude Include="src\fractal.h" />
     <ClInclude Include="src\image.h" />
@@ -21,6 +22,7 @@
     <CudaCompile Include="src\fractal.cu" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\console.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\png_writer.cpp" />
   </ItemGroup>

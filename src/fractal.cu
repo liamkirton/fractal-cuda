@@ -23,6 +23,8 @@
 
 #include "fractal.h"
 
+#include "console.h"
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Init Kernels
@@ -364,7 +366,7 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
     params.escape_range_min_ = 0xffffffffffffffff;
     params.escape_range_max_ = 0;
 
-    for (uint64_t escape_i = 0; escape_i < escape_count; ++escape_i) {
+    for (uint64_t escape_i = 0; escape_i <= escape_count; ++escape_i) {
         for (uint32_t chunk_i = 0; chunk_i < chunk_count; ++chunk_i) {
             uint32_t chunk_offset = chunk_i * cuda_groups_ * cuda_threads_;
             uint32_t chunk_size = std::min((params.image_width_ * params.image_height_) - chunk_offset,
@@ -373,11 +375,11 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
 
             std::cout << "\r    [+] Chunk: "
                 << chunk_i + 1 << " / " << chunk_count
-                << ", Block: " << (escape_i + 1) * escape_block_ << " / " << escape_limit_
+                << ", Block: " << escape_i * escape_block_ << " / " << escape_limit_
                 << (chunk_completion[chunk_i] ? ", Complete" : "")
                 << ", Range: " << params.escape_range_min_ << " : " << params.escape_range_max_
-                << std::flush
-                << "                    " << std::flush;
+                << std::flush;
+            std::cout << fill_console_line();
 
             params.chunk_offset_ = chunk_offset;
             params.escape_i_ = escape_i;
@@ -466,7 +468,7 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                 }
             }
 
-            if (!chunk_completion[chunk_i]) {
+            if ((chunk_i < chunk_count) && !chunk_completion[chunk_i]) {
                 //
                 // Core Chunk Iteration
                 //
@@ -616,10 +618,9 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                 std::cout << std::endl << "    [+] Aborted.";
                 return cleanup();
             }
-            else if (std::all_of(chunk_completion.begin(), chunk_completion.end(), [](auto &c) { return c.second; })) {
-                std::cout << std::endl << "    [+] Complete!";
-                escape_i = escape_count;
-                break;
+            else if ((escape_i < escape_count) &&
+                     std::all_of(chunk_completion.begin(), chunk_completion.end(), [](auto &c) { return c.second; })) {
+                escape_i = (escape_count - 1);
             }
         }
     }
@@ -687,7 +688,7 @@ bool fractal<T>::generate_perturbation_reference(kernel_params<T> &params, std::
     kernel_params<T> params_reference = params;
 
     for (uint32_t level_i = 0; level_i < grid_levels_; ++level_i) {
-        std::cout << "                                \r    [+] Ref Level: " << level_i + 1 << std::flush;
+        std::cout << "\r    [+] Ref Level: " << level_i + 1 << std::flush;
 
         params_reference.chunk_offset_ = 0;
         params_reference.escape_i_ = 0;
@@ -772,6 +773,7 @@ bool fractal<T>::generate_perturbation_reference(kernel_params<T> &params, std::
 
         std::cout << ", Esc: " << escape_max << ", Abs: " << abs_min
             << ", Re: " << params_reference.re_ref_ << ", Im: " << params_reference.im_ref_ << std::flush;
+        std::cout << fill_console_line() << std::flush;
     }
 
     params.re_ref_ = params_reference.re_ref_;

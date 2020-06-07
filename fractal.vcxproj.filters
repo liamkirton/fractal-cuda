@@ -21,6 +21,9 @@
     <ClInclude Include="src\image.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="src\console.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="src\fractal.cu">
@@ -32,6 +35,9 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\png_writer.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\console.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>
