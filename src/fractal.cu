@@ -350,9 +350,9 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
         chunk_count++;
     }
 
-    std::map<uint32_t, bool> chunk_status;
+    std::map<uint32_t, std::tuple<bool, uint64_t, uint64_t>> chunk_status;
     for (uint32_t i = 0; i < chunk_count; ++i) {
-        chunk_status[i] = false;
+        chunk_status[i] = std::make_tuple(false, 0, escape_limit_);
     }
 
     uint32_t escape_count = static_cast<uint32_t>(escape_limit_ / escape_block_);
@@ -363,9 +363,6 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
     //
     // Generation Loop
     //
-
-    uint64_t escape_range_min = 0xffffffffffffffff;
-    uint64_t escape_range_max = 0;
 
     params.escape_range_min_ = 0;
     params.escape_range_max_ = escape_limit_;
@@ -380,7 +377,7 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
             std::cout << "\r    [+] Chunk: "
                 << chunk_i + 1 << " / " << chunk_count
                 << ", Block: " << escape_i * escape_block_ << " / " << escape_limit_
-                << (chunk_status[chunk_i] ? ", Complete" : "")
+                << (std::get<0>(chunk_status[chunk_i]) ? ", Complete" : "")
                 << std::flush;
 
             params.chunk_offset_ = chunk_offset;
@@ -470,7 +467,7 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                 }
             }
 
-            if ((chunk_i < chunk_count) && !chunk_status[chunk_i]) {
+            if ((chunk_i < chunk_count) && !std::get<0>(chunk_status[chunk_i])) {
                 //
                 // Core Chunk Iteration
                 //
@@ -559,18 +556,10 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                 }
 
                 if (reduce.escape_reduce_ == (chunk_cuda_groups * cuda_threads_)) {
-                    chunk_status[chunk_i] = true;
+                    std::get<0>(chunk_status[chunk_i]) = true;
                 }
-                if (reduce.escape_reduce_min_ < escape_range_min) {
-                    escape_range_min = params.escape_range_min_ = reduce.escape_reduce_min_;
-                }
-                if (reduce.escape_reduce_max_ > escape_range_max) {
-                    escape_range_max = params.escape_range_max_ = reduce.escape_reduce_max_;
-                }
-
-                std::cout << "; Range: " << params.escape_range_min_ << " : "
-                    << params.escape_range_max_ << std::flush;
-                std::cout << fill_console_line();
+                std::get<1>(chunk_status[chunk_i]) = reduce.escape_reduce_min_;
+                std::get<2>(chunk_status[chunk_i]) = reduce.escape_reduce_max_;
 
                 if ((cudaError = cudaMemcpy(params_device, &params, sizeof(params),
                         cudaMemcpyHostToDevice)) != cudaSuccess) {
@@ -580,6 +569,35 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                     return cleanup();
                 }
             }
+
+            //
+            // Recalculate Escape Range
+            //
+
+            params.escape_range_min_ = escape_limit_;
+            params.escape_range_max_ = 0;
+
+            for (auto& v : chunk_status) {
+                auto& escape_range_min = std::get<1>(v.second);
+                auto& escape_range_max = std::get<2>(v.second);
+
+                if ((escape_range_min > 0) && (escape_range_min < params.escape_range_min_)) {
+                    params.escape_range_min_ = escape_range_min;
+                }
+                if ((escape_range_max < escape_limit_) && (escape_range_max > params.escape_range_max_)) {
+                    params.escape_range_max_ = escape_range_max;
+                }
+            }
+
+            if (params.escape_range_min_ == escape_limit_) {
+                params.escape_range_min_ = 0;
+            }
+            if (params.escape_range_max_ == 0) {
+                params.escape_range_max_ = escape_limit_;
+            }
+
+            std::cout << "; Range: " << params.escape_range_min_ << " : "
+                << params.escape_range_max_ << std::flush;
 
             //
             // Colour Chunk
@@ -620,12 +638,16 @@ bool fractal<T>::generate(kernel_params<T> &params, std::function<bool()> callba
                 return cleanup();
             }
 
+            std::cout << fill_console_line();
+
             if (!callback()) {
                 std::cout << std::endl << "    [+] Aborted.";
                 return cleanup();
             }
             else if ((escape_i < escape_count) &&
-                     std::all_of(chunk_status.begin(), chunk_status.end(), [](auto &c) { return c.second; })) {
+                     std::all_of(chunk_status.begin(),
+                         chunk_status.end(),
+                         [](auto &c) { return std::get<0>(c.second); })) {
                 escape_i = (escape_count - 1);
             }
         }
