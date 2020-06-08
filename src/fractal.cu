@@ -1308,10 +1308,7 @@ __global__ void kernel_colour(S *chunks, kernel_params<T> *params, uint32_t *ima
                 mu = 2.71828182846;
             }
             hue = log(escape_max) / log(1.0 + mu);
-            if (params->colour_method_ <= 11) {
-
-            }
-            else if (params->colour_method_ <= 13) {
+            if ((params->colour_method_ >= 12) && (params->colour_method_ <= 13)) {
                 hue = fmod(hue, 2.0);
                 if (hue > 1.0) {
                     hue = 2.0 - hue;
@@ -1380,7 +1377,7 @@ __global__ void kernel_reduce(S *chunks, kernel_params<T> *params, kernel_reduce
     kernel_reduce_params *reduce = &reduce_params[threadIdx.x];
 
     uint64_t escape_reduce = 0;
-    uint64_t escape_reduce_min = 0xffffffffffffffff;
+    uint64_t escape_reduce_min = params->escape_limit_;
     uint64_t escape_reduce_max = 0;
 
     for (uint32_t i = 0; i < chunk_count; ++i) {
@@ -1391,14 +1388,14 @@ __global__ void kernel_reduce(S *chunks, kernel_params<T> *params, kernel_reduce
         if (c->escape_ < escape_reduce_min) {
             escape_reduce_min = c->escape_;
         }
-        if (c->escape_ > escape_reduce_max) {
+        if ((c->escape_ < params->escape_limit_) && (c->escape_ > escape_reduce_max)) {
             escape_reduce_max = c->escape_;
         }
     }
 
     reduce->escape_reduce_ = escape_reduce;
-    reduce->escape_reduce_min_ = escape_reduce_min;
-    reduce->escape_reduce_max_ = escape_reduce_max;
+    reduce->escape_reduce_min_ = (escape_reduce_min != params->escape_limit_) ? escape_reduce_min : 0;
+    reduce->escape_reduce_max_ = (escape_reduce_max != 0) ? escape_reduce_max : params->escape_limit_;
 
     __syncthreads();
 

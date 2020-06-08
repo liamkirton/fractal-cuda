@@ -400,7 +400,7 @@ public:
                     }
                     v.set(t);
                 }
-                }, i));
+            }, i));
         }
 
         fixed_point<I + F, I + F> decimal_part;
