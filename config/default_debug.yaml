@@ -45,7 +45,7 @@ scale_factor: 0.75
 perturbation: false
 grid_x: 32
 grid_y: 32
-grid_levels: 4
+grid_levels: 1
 ###
 # Image
 ###
@@ -53,8 +53,8 @@ grid_levels: 4
 image_directory: "output"
 image_name_prefix: ""
 
-image_width: 1024
-image_height: 1024
+image_width: 640
+image_height: 640
 
 ###
 # Run
@@ -62,11 +62,6 @@ image_height: 1024
 
 count: 1
 skip: 0
-
-follow_variance: false
-random: false
-reset: false
-trial: true
 
 interactive: false
 oversample: false

@@ -54,7 +54,7 @@ image_directory: "output"
 image_name_prefix: ""
 
 image_width: 1024
-image_height: 768
+image_height: 1024
 
 ###
 # Run

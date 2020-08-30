@@ -86,7 +86,7 @@ public:
             if (data[i] != 0) {
                 for (int32_t j = 31; j >= 0; --j) {
                     if (data[i] & (1 << j)) {
-                        return 32 * (F - 1 - i) + 32 - j;
+                        return 32 * (F - 1 - i) + 31 - j;
                     }
                 }
             }
@@ -166,6 +166,18 @@ public:
             return static_cast<const int64_t>(*reinterpret_cast<const int32_t*>(&data[F]));
         }
         return *reinterpret_cast<const int64_t*>(&data[F]);
+    }
+
+    inline __host__ __device__ int64_t get_order() const {
+        uint32_t o = 0;
+
+        fixed_point<I, F> t(*this);
+        while (t.get_integer() == 0) {
+            t.multiply(10.0, t);
+            ++o;
+        }
+
+        return o;
     }
 
     inline __host__ std::string get_string() const {
@@ -400,7 +412,7 @@ public:
                     }
                     v.set(t);
                 }
-            }, i));
+                }, i));
         }
 
         fixed_point<I + F, I + F> decimal_part;

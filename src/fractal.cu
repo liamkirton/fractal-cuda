@@ -903,8 +903,11 @@ __global__ void kernel_init_mandelbrot(kernel_chunk<fixed_point<I, F>> *chunks,
     const double pixel_x = (params->chunk_offset_ + tid) % params->image_width_;
     const double pixel_y = (params->chunk_offset_ + tid) / params->image_width_;
 
-    fixed_point<I, F> re_c(kReMin + pixel_x * (kReMax - kReMin) / params->image_width_);
-    fixed_point<I, F> im_c(kImMax - pixel_y * (kImMax - kImMin) / params->image_height_);
+    const double pixel_shift_x = (params->image_viewport_ - params->image_width_) / 2;
+    const double pixel_shift_y = (params->image_viewport_ - params->image_height_) / 2;
+
+    fixed_point<I, F> re_c(kReMin + (pixel_x + pixel_shift_x) * (kReMax - kReMin) / params->image_viewport_);
+    fixed_point<I, F> im_c(kImMax - (pixel_y + pixel_shift_y) * (kImMax - kImMin) / params->image_viewport_);
     re_c.multiply(params->scale_);
     im_c.multiply(params->scale_);
     re_c.add(params->re_);

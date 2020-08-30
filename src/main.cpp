@@ -690,7 +690,8 @@ bool run_generate(run_state &r, std::function<bool(bool, image &, std::string &,
             uint32_t precision_bit = precision_test.get_fractional_significant_bit();
 
             std::cout << "[+] Generating Fractal #" << i << std::endl
-                << "  [+] Precison Bit: " << precision_bit;
+                << "  [+] Precison Bit: " << precision_bit
+                << "; Order 10e-" << precision_test.get_order();
 
             if (precision_bit < 53) {
                 run_step<0, 0>(r, i, palette, callback);
