@@ -26,6 +26,14 @@ To run interactively:
 
     .\bin\x64\Release\fractal.exe -interactive
 
+Interactive controls:
+
+* Left Click / Page Down = Zoom In
+* Right Click / Page Up = Zoom Out
+* Middle Click = Centre
+* Ctrl + <Click> = Zoom Faster
+* Shift + Left Click = Save Image
+
 To render one image with specific coordinates:
 
     .\bin\x64\Release\fractal.exe -re 0.16008284883560522 -im 0.5725060571509984 -scale 0.00000244
