@@ -1,13 +1,12 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Fractal Generator
-// (C)2018-20 Liam Kirton <liam@int3.ws>
+// (C)2018-21 Liam Kirton <liam@int3.ws>
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#define NOMINMAX
 #include <windows.h>
-#undef min
-#undef max
 
 #include <algorithm>
 #include <cmath>
@@ -118,7 +117,7 @@ template<> bool run_step<0, 0>(
 int main(int argc, char *argv[]) {
     std::cout << std::endl
         << "Fractal" << std::endl
-        << "(C)2018-20 Liam Kirton <liam@int3.ws>" << std::endl
+        << "(C)2018-21 Liam Kirton <liam@int3.ws>" << std::endl
         << std::endl;
 
     YAML::Node default_config;

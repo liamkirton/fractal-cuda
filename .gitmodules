@@ -1,0 +1,6 @@
+[submodule "third_party/libpng"]
+	path = third_party/libpng
+	url = git@github.com:glennrp/libpng.git
+[submodule "third_party/zlib"]
+	path = third_party/zlib
+	url = git@github.com:madler/zlib.git

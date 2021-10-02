@@ -1,0 +1,5 @@
+image_width: 640
+image_height: 480
+
+escape_block: 128
+escape_limit: 512
