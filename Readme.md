@@ -4,16 +4,15 @@
 
 ## Prerequisites
 
-* Visual Studio 2019
-* CUDA Toolkit 11.4
+* Visual Studio 2022
+* CUDA Toolkit 11.5
 
 ## Building Dependencies
 
 1. Initialise git submodules
-2. Open third_party/zlib/contrib/vstudio/vc14/zlibvc.sln
-3. Build "Release" for "x64"
-4. Open third_party/libpng/projects/vstudio.sln
-5. Build "Release" for "x64"
+2. Open Developer PowerShell
+3. cd third_party/
+5. ./build.ps1
 
 ## Building
 

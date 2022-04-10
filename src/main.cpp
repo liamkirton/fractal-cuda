@@ -1,7 +1,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Fractal Generator
-// (C)2018-21 Liam Kirton <liam@int3.ws>
+// (C)2018-22 Liam Kirton <liam@int3.ws>
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -24,7 +24,6 @@
 #include <tuple>
 #include <vector>
 
-#define _NOEXCEPT noexcept
 #include <yaml-cpp/yaml.h>
 
 #include "cuda_runtime.h"
@@ -117,7 +116,7 @@ template<> bool run_step<0, 0>(
 int main(int argc, char *argv[]) {
     std::cout << std::endl
         << "Fractal" << std::endl
-        << "(C)2018-21 Liam Kirton <liam@int3.ws>" << std::endl
+        << "(C)2018-22 Liam Kirton <liam@int3.ws>" << std::endl
         << std::endl;
 
     YAML::Node default_config;
