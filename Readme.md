@@ -9,7 +9,7 @@
 
 ## Building Dependencies
 
-1. Initialise git submodules
+1. `git submodule update --init --recursive`
 2. Open Developer PowerShell
 3. cd third_party/
 5. ./build.ps1
